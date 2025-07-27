@@ -2,11 +2,13 @@ import logging
 import os
 import httpx
 import uuid
-import random
 import re
-import json
+import asyncio
 from collections import deque
 from datetime import date
+
+import motor.motor_asyncio
+from pymongo import ReturnDocument
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, error
 from telegram.ext import (
@@ -15,20 +17,37 @@ from telegram.ext import (
 )
 from telegram.constants import ChatAction, ParseMode
 
+# --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8385126802:AAEqYo6r3IyteSnPgLHUTpAaxdNU1SfHlB4"
 A4F_API_KEY = "ddc-a4f-4c0658a7764c432c9aa8e4a6d409afb3"
 A4F_API_BASE_URL = "https://api.a4f.co/v1"
 
+# !! IMPORTANT !!
+# PASTE THE "STANDARD CONNECTION STRING" FROM MONGODB ATLAS HERE.
+# It should start with "mongodb://" and NOT "mongodb+srv://"
+# Make sure to replace <password> with your actual database password.
+MONGO_DB_URI = "mongodb+srv://kuntaldebnath777:CRbyIO8WhWbTUTGO@cluster0.phnj4cn.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+
 ADMIN_CHAT_ID = 7088711806
 DAILY_CREDITS = 10
-DATA_DIR = "data"
-USERS_DIR = os.path.join(DATA_DIR, "users")
-REDEEM_CODES_FILE = os.path.join(DATA_DIR, "redeem_codes.json")
 
+# --- LOGGING SETUP ---
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+# --- DATABASE SETUP ---
+try:
+    db_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_DB_URI)
+    db = db_client["telegram_bot_db"]
+    users_collection = db["users"]
+    redeem_codes_collection = db["redeem_codes"]
+except Exception as e:
+    logger.critical(f"Could not connect to MongoDB: {e}")
+    exit(1)
+
+
+# --- MODELS & CONSTANTS ---
 MODELS = {
     "chat": [
         "provider-1/chatgpt-4o-latest", "provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/gpt-4.1-mini",
@@ -40,7 +59,12 @@ MODELS = {
         "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b",
         "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout",
         "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash",
-        "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo"
+        "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral",
+        "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b",
+        "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba",
+        "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528",
+        "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro",
+        "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"
     ],
     "image": [
         "provider-4/imagen-3", "provider-4/imagen-4", "provider-6/sana-1.5-flash", "provider-1/FLUX.1-schnell",
@@ -53,12 +77,8 @@ MODELS = {
         "provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro",
         "provider-6/black-forest-labs-flux-1-kontext-max", "provider-3/flux-kontext-dev"
     ],
-    "video": [
-        "provider-6/wan-2.1"
-    ],
-    "tts": [
-        "provider-3/tts-1", "provider-6/sonic-2", "provider-6/sonic"
-    ],
+    "video": ["provider-6/wan-2.1"],
+    "tts": ["provider-3/tts-1", "provider-6/sonic-2", "provider-6/sonic"],
     "transcription": [
         "provider-2/whisper-1", "provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en",
         "provider-3/gpt-4o-mini-transcribe"
@@ -81,60 +101,47 @@ LOADING_MESSAGES = {
  AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_IMAGE_SIZE, AWAITING_TTS_VOICE,
  AWAITING_VIDEO_RATIO) = range(10)
 
-def setup_data_directory():
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-    if not os.path.exists(USERS_DIR):
-        os.makedirs(USERS_DIR)
-    if not os.path.exists(REDEEM_CODES_FILE):
-        with open(REDEEM_CODES_FILE, 'w') as f:
-            json.dump({}, f)
 
-def load_user_data(user_id):
-    user_file = os.path.join(USERS_DIR, f"{user_id}.json")
+async def setup_database():
+    await users_collection.create_index("user_id", unique=True)
+    await redeem_codes_collection.create_index("code", unique=True)
+    logger.info("Database setup complete and indexes ensured.")
+
+async def get_or_create_user(user_id: int) -> tuple[dict, bool]:
     today = date.today().isoformat()
-    if not os.path.exists(user_file):
-        user_data = {
+    user_doc = await users_collection.find_one({"user_id": user_id})
+
+    if user_doc:
+        if user_doc.get("last_login_date") != today and user_id != ADMIN_CHAT_ID:
+            updated_doc = await users_collection.find_one_and_update(
+                {"user_id": user_id},
+                {"$set": {"credits": DAILY_CREDITS, "last_login_date": today}},
+                return_document=ReturnDocument.AFTER
+            )
+            return updated_doc, False
+        return user_doc, False
+    else:
+        new_user_data = {
+            "user_id": user_id,
             "credits": DAILY_CREDITS,
             "last_login_date": today,
-            "is_new": True
         }
-        save_user_data(user_id, user_data)
-        return user_data
-
-    with open(user_file, 'r') as f:
-        user_data = json.load(f)
-
-    if user_data.get("last_login_date") != today and user_id != ADMIN_CHAT_ID:
-        user_data["credits"] = DAILY_CREDITS
-        user_data["last_login_date"] = today
-        save_user_data(user_id, user_data)
-
-    user_data["is_new"] = user_data.get("is_new", False)
-    return user_data
-
-def save_user_data(user_id, data):
-    user_file = os.path.join(USERS_DIR, f"{user_id}.json")
-    with open(user_file, 'w') as f:
-        json.dump(data, f, indent=4)
-
-def load_redeem_codes():
-    with open(REDEEM_CODES_FILE, 'r') as f:
-        return json.load(f)
-
-def save_redeem_codes(codes):
-    with open(REDEEM_CODES_FILE, 'w') as f:
-        json.dump(codes, f, indent=4)
+        await users_collection.insert_one(new_user_data)
+        return new_user_data, True
 
 async def check_and_use_credit(user_id: int) -> bool:
     if user_id == ADMIN_CHAT_ID:
         return True
-    user_data = load_user_data(user_id)
-    if user_data["credits"] > 0:
-        user_data["credits"] -= 1
-        save_user_data(user_id, user_data)
-        return True
-    return False
+    result = await users_collection.find_one_and_update(
+        {"user_id": user_id, "credits": {"$gt": 0}},
+        {"$inc": {"credits": -1}}
+    )
+    return result is not None
+
+async def refund_credit(user_id: int):
+    if user_id != ADMIN_CHAT_ID:
+        await users_collection.update_one({"user_id": user_id}, {"$inc": {"credits": 1}})
+        logger.info(f"Refunded 1 credit to user {user_id}")
 
 def escape_markdown_v2(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
@@ -174,7 +181,7 @@ async def handle_api_error(update_or_query, error_obj):
             error_message = f"❌ *API Error:*\n{escape_markdown_v2(details.get('error', {}).get('message', 'No details from API.'))}"
         else:
              error_message = f"❌ *An unexpected error occurred:*\n{escape_markdown_v2(str(error_obj))}"
-    except (json.JSONDecodeError, AttributeError):
+    except Exception:
         error_message = f"❌ *An unexpected API error occurred:*\n{escape_markdown_v2(str(error_obj))}"
 
     message_to_edit = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
@@ -207,11 +214,9 @@ async def notify_admin_of_new_user(context: ContextTypes.DEFAULT_TYPE, user: Upd
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-    user_data = load_user_data(user.id)
-    if user_data.get("is_new"):
+    _, was_created = await get_or_create_user(user.id)
+    if was_created:
         await notify_admin_of_new_user(context, user)
-        user_data["is_new"] = False
-        save_user_data(user.id, user_data)
 
     context.user_data.pop('chat_history', None)
     context.user_data.pop('image_edit_path', None)
@@ -236,7 +241,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def credits_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    user_data = load_user_data(user_id)
+    user_data, _ = await get_or_create_user(user_id)
     credits = "♾️ Unlimited (Admin)" if is_admin(user_id) else user_data.get('credits', 0)
     text = (f"💰 <b>Your Credits</b>\n\n"
             f"You currently have: <b>{credits}</b> credits.\n\n"
@@ -342,13 +347,16 @@ async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_
     msg_text = f"✅ Model Selected: `{escape_markdown_v2(model_name.split('/')[-1])}`\n\n"
 
     if category == "image":
-        await query.edit_message_text(msg_text + "📏 Now, choose an aspect ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"is_{size}") for name, size in IMAGE_SIZES.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
+        keyboard = [[InlineKeyboardButton(name, callback_data=f"is_{size}") for name, size in IMAGE_SIZES.items()]]
+        await query.edit_message_text(msg_text + "📏 Now, choose an aspect ratio\\.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_IMAGE_SIZE
     if category == "video":
-        await query.edit_message_text(msg_text + "🎬 Now, choose a video ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"vr_{ratio}") for name, ratio in VIDEO_RATIOS.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
+        keyboard = [[InlineKeyboardButton(name, callback_data=f"vr_{ratio}") for name, ratio in VIDEO_RATIOS.items()]]
+        await query.edit_message_text(msg_text + "🎬 Now, choose a video ratio\\.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_VIDEO_RATIO
     if category == "tts":
-        await query.edit_message_text(msg_text + "🗣️ Now, choose a voice\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[:3]], [InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[3:]]]), parse_mode=ParseMode.MARKDOWN_V2)
+        keyboard = [[InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[:3]], [InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[3:]]]
+        await query.edit_message_text(msg_text + "🗣️ Now, choose a voice\\.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_TTS_VOICE
 
     prompt_map = {"chat": "💬 What's on your mind?","transcription": "🎤 Send me a voice message or audio file.","image_edit": "🖼️ First, send the image you want to edit."}
@@ -375,7 +383,8 @@ async def tts_voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return AWAITING_TTS_INPUT
 
 async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_type: str):
-    if not await check_and_use_credit(update.effective_user.id):
+    user_id = update.effective_user.id
+    if not await check_and_use_credit(user_id):
         await update.effective_message.reply_text("🚫 You are out of credits! Use /redeem to get more or wait for your daily refill.")
         return SELECTING_ACTION
 
@@ -390,7 +399,6 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                 if 'chat_history' not in context.user_data: context.user_data['chat_history'] = deque(maxlen=10)
                 context.user_data['chat_history'].append({"role": "user", "content": message.text})
                 data = {"model": context.user_data['model'], "messages": list(context.user_data['chat_history'])}
-                headers["Content-Type"] = "application/json"
                 response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
                 response.raise_for_status()
                 json_data = response.json()
@@ -399,7 +407,11 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     raise ValueError("API returned an empty or invalid chat response.")
                 result_text = choices[0]['message']['content']
                 context.user_data['chat_history'].append({"role": "assistant", "content": result_text})
-                await processing_message.edit_text(result_text)
+                try:
+                    await processing_message.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
+                except error.BadRequest:
+                    logger.warning("Markdown parsing failed, sending as plain text.")
+                    await processing_message.edit_text(result_text)
                 return AWAITING_PROMPT
 
             elif task_type in ['image', 'video', 'image_edit']:
@@ -418,14 +430,8 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     files = {'image': open(image_path, 'rb')}
 
                 await context.bot.send_chat_action(message.chat_id, action)
-                if files:
-                    response = await client.post(f"{A4F_API_BASE_URL}/{endpoint}", headers=headers, data=data, files=files, timeout=180)
-                else:
-                    headers["Content-Type"] = "application/json"
-                    response = await client.post(f"{A4F_API_BASE_URL}/{endpoint}", headers=headers, json=data, timeout=180)
-                
-                if files:
-                    files['image'].close()
+                response = await client.post(f"{A4F_API_BASE_URL}/{endpoint}", headers=headers, data=data, files=files if files else None, timeout=180)
+                if files: files['image'].close()
                 response.raise_for_status()
                 json_data = response.json()
                 data_list = json_data.get('data')
@@ -444,7 +450,6 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             elif task_type == 'tts':
                 await context.bot.send_chat_action(message.chat_id, ChatAction.RECORD_VOICE)
                 data = {"model": context.user_data['model'], "input": message.text, "voice": context.user_data.get('tts_voice', 'alloy')}
-                headers["Content-Type"] = "application/json"
                 response = await client.post(f"{A4F_API_BASE_URL}/audio/speech", headers=headers, json=data, timeout=60)
                 response.raise_for_status()
                 await context.bot.send_voice(message.chat_id, voice=response.content, caption=f"🗣️ Voice: {context.user_data.get('tts_voice', 'alloy').capitalize()}")
@@ -472,12 +477,7 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
 
     except (httpx.RequestError, ValueError, KeyError, IndexError) as e:
         logger.error(f"An error occurred in process_task: {e}", exc_info=True)
-        user_id = update.effective_user.id
-        if task_type != 'chat' and user_id != ADMIN_CHAT_ID:
-            user_data = load_user_data(user_id)
-            user_data["credits"] += 1
-            save_user_data(user_id, user_data)
-        
+        await refund_credit(user_id)
         if isinstance(e, httpx.RequestError):
             await handle_api_error(processing_message, e)
         else:
@@ -486,7 +486,8 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             
     except Exception as e:
         logger.error(f"A critical internal error occurred in process_task: {e}", exc_info=True)
-        await processing_message.edit_text("❌ A critical internal error occurred. The developers have been notified.")
+        await refund_credit(user_id)
+        await processing_message.edit_text("❌ A critical internal error occurred. Credit has been refunded.")
     
     finally:
         await cleanup_files(context.user_data.pop('image_edit_path', None), context.user_data.pop('temp_file_path', None))
@@ -515,21 +516,27 @@ async def image_for_edit_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 async def redeem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Please provide a code to redeem. Usage: `/redeem YOUR-CODE-HERE`")
+        await update.message.reply_text("Please provide a code. Usage: `/redeem YOUR-CODE`")
         return
 
     code_to_redeem = context.args[0]
     user_id = update.effective_user.id
-    codes = load_redeem_codes()
+    
+    code_doc = await redeem_codes_collection.find_one_and_update(
+        {"code": code_to_redeem, "is_active": True},
+        {"$set": {"is_active": False}}
+    )
 
-    if code_to_redeem in codes and codes[code_to_redeem]["is_active"]:
-        credits_to_add = codes[code_to_redeem]["credits"]
-        user_data = load_user_data(user_id)
-        user_data["credits"] += credits_to_add
-        codes[code_to_redeem]["is_active"] = False
-        save_user_data(user_id, user_data)
-        save_redeem_codes(codes)
-        await update.message.reply_text(f"🎉 Success! **{credits_to_add}** credits have been added to your account. You now have **{user_data['credits']}** credits.", parse_mode=ParseMode.MARKDOWN)
+    if code_doc:
+        credits_to_add = code_doc["credits"]
+        user_update_result = await users_collection.find_one_and_update(
+            {"user_id": user_id},
+            {"$inc": {"credits": credits_to_add}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER
+        )
+        new_balance = user_update_result["credits"]
+        await update.message.reply_text(f"🎉 Success! *{credits_to_add}* credits have been added. You now have *{new_balance}* credits.", parse_mode=ParseMode.MARKDOWN_V2)
     else:
         await update.message.reply_text("❌ This code is invalid or has already been used.")
 
@@ -542,34 +549,109 @@ async def generate_code_command(update: Update, context: ContextTypes.DEFAULT_TY
         credits, amount = int(context.args[0]), int(context.args[1])
         if credits <= 0 or amount <= 0: raise ValueError
     except (IndexError, ValueError):
-        await update.message.reply_text("Invalid format. Usage: `/code {credits_per_code} {number_of_codes}`")
+        await update.message.reply_text("Invalid format. Usage: `/code {credits} {amount}`")
         return
 
-    codes = load_redeem_codes()
-    new_codes = []
+    new_codes_docs = []
+    new_codes_text = []
     for _ in range(amount):
-        unique_part = uuid.uuid4().hex[:12].upper()
-        full_code = f"SYPNS-{unique_part}-BOT"
-        codes[full_code] = {"credits": credits, "is_active": True}
-        new_codes.append(f"`{full_code}`")
+        full_code = f"SYPNS-{uuid.uuid4().hex[:12].upper()}-BOT"
+        new_codes_docs.append({"code": full_code, "credits": credits, "is_active": True})
+        new_codes_text.append(f"`{full_code}`")
+    
+    if new_codes_docs:
+        await redeem_codes_collection.insert_many(new_codes_docs)
+    message_text = f"✅ Generated *{amount}* new code(s), each worth *{credits}* credits:\n\n" + "\n".join(new_codes_text)
+    await update.message.reply_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
 
-    save_redeem_codes(codes)
-    message_text = f"✅ Generated **{amount}** new code(s), each worth **{credits}** credits:\n\n" + "\n".join(new_codes)
-    await update.message.reply_text(message_text, parse_mode=ParseMode.MARKDOWN)
+async def give_credits_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔️ This command is for administrators only.")
+        return
+
+    try:
+        target_user_id = int(context.args[0])
+        amount = int(context.args[1])
+    except (IndexError, ValueError):
+        await update.message.reply_text("Invalid format. Usage: `/cred {user_id} {amount}`")
+        return
+    
+    result = await users_collection.find_one_and_update(
+        {"user_id": target_user_id},
+        {"$inc": {"credits": amount}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    if result:
+        await update.message.reply_text(f"✅ Successfully gave {amount} credits to user `{target_user_id}`. Their new balance is {result['credits']}.", parse_mode=ParseMode.MARKDOWN_V2)
+    else:
+        await update.message.reply_text(f"❌ Could not update credits for user `{target_user_id}`.", parse_mode=ParseMode.MARKDOWN_V2)
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔️ This command is for administrators only.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Please provide a message to broadcast. Usage: `/brod Your message here`")
+        return
+    message_to_send = update.message.text.split(' ', 1)[1]
+    
+    users_cursor = users_collection.find({}, {"user_id": 1})
+    success_count = 0
+    fail_count = 0
+    
+    await update.message.reply_text(f"📢 Starting broadcast...")
+    
+    async for user in users_cursor:
+        user_id = user["user_id"]
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message_to_send)
+            success_count += 1
+        except (error.Forbidden, error.BadRequest):
+            fail_count += 1
+        except Exception as e:
+            logger.error(f"Error broadcasting to {user_id}: {e}")
+            fail_count += 1
+        await asyncio.sleep(0.1) # Avoid rate limiting
+        
+    await update.message.reply_text(f"Broadcast finished.\n✅ Sent successfully: {success_count}\n❌ Failed to send: {fail_count}")
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔️ This command is for administrators only.")
+        return
+    
+    total_users = await users_collection.count_documents({})
+    active_codes = await redeem_codes_collection.count_documents({"is_active": True})
+    
+    stats_text = (
+        f"📊 <b>Bot Statistics</b> 📊\n\n"
+        f"👥 Total Users: <b>{total_users}</b>\n"
+        f"🎟️ Active Redeem Codes: <b>{active_codes}</b>"
+    )
+    await update.message.reply_html(stats_text)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         try:
-            await update.effective_message.reply_text("An unexpected error occurred. Please try again later or contact support if the issue persists.")
+            await update.effective_message.reply_text("An unexpected error occurred. Please try again later.")
         except Exception as e:
             logger.error(f"Failed to send error message to user: {e}")
 
-def main() -> None:
-    setup_data_directory()
-    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
-        print("!!! ERROR: Please set your 'TELEGRAM_BOT_TOKEN'. !!!"); return
-    if ADMIN_CHAT_ID == 0: print("!!! WARNING: 'ADMIN_CHAT_ID' is not set. Admin features will be disabled. !!!")
+async def run_bot():
+    if not TELEGRAM_BOT_TOKEN: logger.critical("!!! ERROR: TELEGRAM_BOT_TOKEN not set. !!!"); return
+    if not MONGO_DB_URI or "<password>" in MONGO_DB_URI:
+        logger.critical("!!! ERROR: MONGO_DB_URI is not set correctly. Please paste the standard connection string and your password. !!!")
+        return
+    if not ADMIN_CHAT_ID: logger.warning("!!! WARNING: ADMIN_CHAT_ID not set. Admin features disabled. !!!")
+    
+    try:
+        await setup_database()
+    except Exception as e:
+        logger.critical(f"Database setup failed, cannot start bot: {e}")
+        return
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).build()
     
@@ -598,9 +680,21 @@ def main() -> None:
     application.add_handler(CommandHandler("mycredits", credits_handler))
     application.add_handler(CommandHandler("redeem", redeem_command))
     application.add_handler(CommandHandler("code", generate_code_command))
+    application.add_handler(CommandHandler("cred", give_credits_command))
+    application.add_handler(CommandHandler("brod", broadcast_command))
+    application.add_handler(CommandHandler("stats", stats_command))
 
-    print("Bot is running...")
-    application.run_polling()
+    logger.info("Starting bot polling...")
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    
+    # Keep the script running
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped manually.")
