@@ -173,7 +173,7 @@ def refund_credit(user_id: int):
         logger.info(f"Refunded 1 credit to user {user_id}")
 
 def escape_markdown_v2(text: str) -> str:
-    return re.sub(f'([{re.escape(r"_*[]()~`>#+-=|{}.!")}])', r'\\\1', text)
+    return re.sub(f'([{re.escape(r"_*[]()~>#+-=|{}.!")}])', r'\\\1', text)
 
 async def cleanup_files(*files):
     for file_path in files:
@@ -220,10 +220,10 @@ async def notify_admin_of_new_user(context: ContextTypes.DEFAULT_TYPE, user: Upd
     if not ADMIN_CHAT_ID: return
     base_text = (f"🎉 *New User Alert*\n\n"
                  f"*Name:* {escape_markdown_v2(user.full_name)}\n"
-                 f"*ID:* `{user.id}`\n"
+                 f"*ID:* {user.id}\n"
                  f"*Username:* {'@' + escape_markdown_v2(user.username) if user.username else 'N/A'}")
     if referred_by:
-        base_text += f"\n*Referred By:* `{referred_by}`"
+        base_text += f"\n*Referred By:* {referred_by}"
     try: await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=base_text, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e: logger.error(f"Failed to send new user notification to admin: {e}")
 
@@ -293,7 +293,7 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id = query_or_message.from_user.id
     user_data = load_user_data(user_id)
     stats = user_data.get('stats', {})
-    stats_text = "\n".join([f"  •  `{k.title()}`: {v}" for k, v in stats.items() if v > 0]) or "_No activity yet\\._"
+    stats_text = "\n".join([f"  •  {k.title()}: {v}" for k, v in stats.items() if v > 0]) or "_No activity yet\\._"
     
     credits = "♾️ Unlimited (Admin)" if is_admin(user_id) else user_data.get('credits', 0)
     
@@ -302,9 +302,9 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     referral_link = f"https://t.me/{bot_username}?start={referral_code}"
 
     text = (f"👤 *My Profile*\n\n"
-            f"💰 *Credits:* `{credits}`\n"
-            f"📈 *Users Referred:* `{user_data.get('referrals_made', 0)}`\n\n"
-            f"🤝 *Your Referral Link:*\n`{escape_markdown_v2(referral_link)}`\n\n"
+            f"💰 *Credits:* {credits}\n"
+            f"📈 *Users Referred:* {user_data.get('referrals_made', 0)}\n\n"
+            f"🤝 *Your Referral Link:*\n{escape_markdown_v2(referral_link)}\n\n"
             f"📊 *Usage Statistics*\n{stats_text}\n\n"
             f"Share your link to earn *{_settings['referral_bonus']}* credits for each new user who joins\\! You can also use /redeem\\.")
             
@@ -319,24 +319,24 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query_or_message = update.callback_query or update.message
     help_text = ("*❔ Help & Information*\n\n*Available Commands:*\n"
-                 "`/start` \\- Return to the main menu\\.\n"
-                 "`/newchat` \\- Clear history for a fresh AI Chat\\.\n"
-                 "`/me` \\- Check your credits, referral code, and stats\\.\n"
-                 "`/personality` \\- Set a custom personality for the chat AI\\.\n"
-                 "`/redeem <CODE>` \\- Redeem a code for credits\\.\n"
-                 "`/help` \\- Show this help message\\.\n"
-                 "`/exit` \\- Stop the current mode \\(like Voice Mode\\)\\.")
+                 "/start \\- Return to the main menu\\.\n"
+                 "/newchat \\- Clear history for a fresh AI Chat\\.\n"
+                 "/me \\- Check your credits, referral code, and stats\\.\n"
+                 "/personality \\- Set a custom personality for the chat AI\\.\n"
+                 "/redeem <CODE> \\- Redeem a code for credits\\.\n"
+                 "/help \\- Show this help message\\.\n"
+                 "/exit \\- Stop the current mode \\(like Voice Mode\\)\\.")
     if is_admin(query_or_message.from_user.id):
         help_text += ("\n\n*Admin Commands:*\n"
-                      "`/admin` \\- Open the admin dashboard\\.\n"
-                      "`/globalstats` \\- View aggregate stats for all users\\.\n"
-                      "`/msg <id> <msg>` \\- Send a message to a user\\.\n"
-                      "`/cred <id> <amt>` \\- Give/deduct credits\\.\n"
-                      "`/watch <id>` \\- Forward a user's messages to you\\.\n"
-                      "`/unwatch <id>` \\- Stop watching a user\\.\n"
-                      "`/listwatched` \\- List all watched users\\.\n"
-                      "`/gethistory <id>` \\- Get a user's chat history\\.\n"
-                      "`/getdata <id>` \\- Get a user's data file\\.")
+                      "/admin \\- Open the admin dashboard\\.\n"
+                      "/globalstats \\- View aggregate stats for all users\\.\n"
+                      "/msg <id> <msg> \\- Send a message to a user\\.\n"
+                      "/cred <id> <amt> \\- Give/deduct credits\\.\n"
+                      "/watch <id> \\- Forward a user's messages to you\\.\n"
+                      "/unwatch <id> \\- Stop watching a user\\.\n"
+                      "/listwatched \\- List all watched users\\.\n"
+                      "/gethistory <id> \\- Get a user's chat history\\.\n"
+                      "/getdata <id> \\- Get a user's data file\\.")
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
     if update.callback_query:
@@ -452,7 +452,7 @@ async def action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if last_model:
         short_model_name = last_model.split('/')[-1]
         keyboard = [[InlineKeyboardButton(f"🚀 Use Last: {short_model_name}", callback_data=f"mr_{category}")], [InlineKeyboardButton("📋 Choose Another Model", callback_data=f"mc_{category}")]]
-        await query.edit_message_text(f"You previously used `{escape_markdown_v2(short_model_name)}`\\. Use it again?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text(f"You previously used {escape_markdown_v2(short_model_name)}\\. Use it again?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         return SELECTING_MODEL
     return await show_model_selection(query, context)
 
@@ -496,7 +496,7 @@ async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_
     if not category or not model_name:
         await query.edit_message_text("Sorry, an error occurred. Returning to the main menu."); return await start_command(update, context)
     context.user_data.update({'model': model_name, f'last_model_{category}': model_name, 'category': category})
-    msg_text = f"✅ Model Selected: `{escape_markdown_v2(model_name.split('/')[-1])}`\n\n"
+    msg_text = f"✅ Model Selected: {escape_markdown_v2(model_name.split('/')[-1])}\n\n"
     
     if category == "image":
         await query.edit_message_text(msg_text + "📏 Now, choose an aspect ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"is_{size}") for name, size in IMAGE_SIZES.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
@@ -819,7 +819,7 @@ async def exit_voice_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return ConversationHandler.END
 
 async def redeem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text("Usage: `/redeem YOUR-CODE`"); return
+    if not context.args: await update.message.reply_text("Usage: /redeem YOUR-CODE"); return
     code_to_redeem, user_id, codes = context.args[0], update.effective_user.id, load_redeem_codes()
     if code_to_redeem in codes and codes[code_to_redeem]["is_active"]:
         credits_to_add, user_data = codes[code_to_redeem]["credits"], load_user_data(user_id)
@@ -1044,8 +1044,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             cpu_text = ram_text = disk_text = "N/A (Permission Denied)"
 
         text = (f"📊 *Bot & System Statistics*\n\n"
-                f"*Users:* `{total_users}`\n"
-                f"*Active Redeem Codes:* `{active_codes}`\n\n"
+                f"*Users:* {total_users}\n"
+                f"*Active Redeem Codes:* {active_codes}\n\n"
                 f"💻 *CPU:* {escape_markdown_v2(cpu_text)}\n"
                 f"🧠 *RAM:* {escape_markdown_v2(ram_text)}\n"
                 f"💽 *Disk:* {escape_markdown_v2(disk_text)}")
@@ -1054,14 +1054,14 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif action == "settings":
         text = "*⚙️ Bot Settings*\n\n"
         for key, value in _settings.items():
-            text += f"`{key}`: `{value}`\n"
-        text += "\nSend setting to change in `key value` format \\(e\\.g\\., `daily_credits 15`\\)\\."
+            text += f"{key}: {value}\n"
+        text += "\nSend setting to change in key value format \\(e\\.g\\., daily_credits 15\\)\\."
         context.user_data['admin_action'] = 'change_setting'
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         return ADMIN_AWAITING_INPUT
         
     elif action == 'users':
-        await query.edit_message_text("Enter User ID to manage, or send `/all` to list users\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        await query.edit_message_text("Enter User ID to manage, or send /all to list users\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         context.user_data['admin_action'] = 'manage_user'
         return ADMIN_AWAITING_INPUT
 
@@ -1071,7 +1071,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         for i, key_info in enumerate(keys_status):
             status = "✅ Active" if key_info.get('active', True) else "❌ Disabled"
             key_display = escape_markdown_v2(f"{key_info['key'][:12]}...{key_info['key'][-4:]}")
-            text += f"`{i}:` {key_display} \\- {status}\n"
+            text += f"{i}: {key_display} \\- {status}\n"
         text += "\nSend key index to toggle its status\\."
         context.user_data['admin_action'] = 'toggle_key'
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
@@ -1083,7 +1083,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         return ADMIN_AWAITING_INPUT
         
     elif action == "gen_codes":
-        await query.edit_message_text("Send details in `credits amount` format \\(e\\.g\\., `10 5` to generate 5 codes worth 10 credits each\\)\\.")
+        await query.edit_message_text("Send details in credits amount format \\(e\\.g\\., 10 5 to generate 5 codes worth 10 credits each\\)\\.")
         context.user_data['admin_action'] = 'gen_codes'
         return ADMIN_AWAITING_INPUT
         
@@ -1117,24 +1117,24 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 _settings[key] = type(DEFAULT_SETTINGS[key])(value)
                 save_settings()
-                await update.message.reply_text(f"✅ Setting `{key}` updated to `{_settings[key]}`.")
+                await update.message.reply_text(f"✅ Setting {key} updated to {_settings[key]}.")
         except Exception as e:
-            await update.message.reply_text(f"Invalid format. Use `key value`. Error: {e}")
+            await update.message.reply_text(f"Invalid format. Use key value. Error: {e}")
 
     elif action == "manage_user":
         if text.lower() == '/all':
              all_users = [f.split('.')[0] for f in os.listdir(USERS_DIR)]
-             user_list = "\n".join([f"`{uid}`" for uid in all_users])
+             user_list = "\n".join([f"{uid}" for uid in all_users])
              await update.message.reply_markdown_v2(f"*All User IDs:*\n{user_list}")
         else:
             try:
                 target_user_id = int(text)
                 if not os.path.exists(os.path.join(USERS_DIR, f"{target_user_id}.json")):
-                    await update.message.reply_text(f"No data for user ID `{target_user_id}`."); return await admin_panel(update, context)
+                    await update.message.reply_text(f"No data for user ID {target_user_id}."); return await admin_panel(update, context)
                 
                 user_data = load_user_data(target_user_id)
-                info_text = (f"ℹ️ *User Info: `{target_user_id}`*\n\n"
-                             f"*Credits:* `{user_data.get('credits', 'N/A')}`\n*Last Login:* `{user_data.get('last_login_date', 'N/A')}`\n"
+                info_text = (f"ℹ️ *User Info: {target_user_id}*\n\n"
+                             f"*Credits:* {user_data.get('credits', 'N/A')}\n*Last Login:* {user_data.get('last_login_date', 'N/A')}\n"
                              f"*Personality:* _{escape_markdown_v2(user_data.get('personality') or 'Not set')}_\n*Banned:* {'Yes' if user_data.get('banned') else 'No'}")
                 
                 keyboard = [
@@ -1155,7 +1155,7 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 keys_status[key_index]['active'] = not keys_status[key_index].get('active', True)
                 save_api_keys(keys_status)
-                await update.message.reply_text(f"✅ Key `{key_index}` has been {'enabled' if keys_status[key_index]['active'] else 'disabled'}.")
+                await update.message.reply_text(f"✅ Key {key_index} has been {'enabled' if keys_status[key_index]['active'] else 'disabled'}.")
         except ValueError: await update.message.reply_text("Invalid index.")
 
     elif action == "broadcast":
@@ -1172,10 +1172,10 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             for _ in range(amount):
                 full_code = f"SYPNS-{uuid.uuid4().hex[:12].upper()}-BOT"
                 codes[full_code] = {"credits": credits, "is_active": True}
-                new_codes_text.append(f"`{escape_markdown_v2(full_code)}`")
+                new_codes_text.append(f"{escape_markdown_v2(full_code)}")
             save_redeem_codes(codes)
             await update.message.reply_markdown_v2(f"✅ Generated *{amount}* codes worth *{credits}* credits:\n\n" + "\n".join(new_codes_text))
-        except ValueError: await update.message.reply_text("Invalid format. Use `credits amount`.")
+        except ValueError: await update.message.reply_text("Invalid format. Use credits amount.")
 
     await admin_panel(update, context)
     return ADMIN_MAIN
@@ -1188,7 +1188,7 @@ async def admin_user_actions_handler(update: Update, context: ContextTypes.DEFAU
     
     if action == "cred":
         context.user_data['admin_action'] = f'add_credits_{target_user_id}'
-        await query.edit_message_text(f"How many credits to add/deduct from user `{target_user_id}`? (Use a negative number to deduct)")
+        await query.edit_message_text(f"How many credits to add/deduct from user {target_user_id}? (Use a negative number to deduct)")
         return ADMIN_AWAITING_INPUT
         
     elif action == "ban":
@@ -1196,7 +1196,7 @@ async def admin_user_actions_handler(update: Update, context: ContextTypes.DEFAU
         user_data['banned'] = not user_data.get('banned', False)
         save_user_data(target_user_id, user_data)
         status = 'banned' if user_data['banned'] else 'unbanned'
-        await query.edit_message_text(f"✅ User `{target_user_id}` has been {status}.")
+        await query.edit_message_text(f"✅ User {target_user_id} has been {status}.")
         try:
             await context.bot.send_message(chat_id=target_user_id, text=f"You have been {status} by an administrator.")
         except Exception as e:
@@ -1246,7 +1246,7 @@ async def admin_add_credits_handler(update: Update, context: ContextTypes.DEFAUL
         user_data['credits'] += amount
         save_user_data(target_user_id, user_data)
         operation = "Gave" if amount >= 0 else "Deducted"
-        await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
+        await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user {target_user_id}\\. New balance: *{user_data['credits']}*\\.")
     except (IndexError, ValueError):
         await update.message.reply_text("Invalid amount.")
         
@@ -1265,12 +1265,12 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             target_user_id = int(context.args[0])
             message_text = " ".join(context.args[1:])
             if not message_text:
-                await update.message.reply_text("Usage: `/msg <user_id> <message>`")
+                await update.message.reply_text("Usage: /msg <user_id> <message>")
                 return
             await context.bot.send_message(chat_id=target_user_id, text=f"✉️ A message from the admin:\n\n{message_text}")
-            await update.message.reply_text(f"✅ Message sent to user `{target_user_id}`.")
+            await update.message.reply_text(f"✅ Message sent to user {target_user_id}.")
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/msg <user_id> <message>`")
+            await update.message.reply_text("Usage: /msg <user_id> <message>")
     
     elif command == "cred":
         try:
@@ -1279,28 +1279,28 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             user_data['credits'] += amount
             save_user_data(target_user_id, user_data)
             operation = "Gave" if amount >= 0 else "Deducted"
-            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
+            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user {target_user_id}\\. New balance: *{user_data['credits']}*\\.")
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/cred <user_id> <amount>` (use negative for deduction)")
+            await update.message.reply_text("Usage: /cred <user_id> <amount> (use negative for deduction)")
 
     elif command in ["watch", "unwatch"]:
         try:
             target_user_id = int(context.args[0])
             if command == "watch":
                 _watched_users.add(target_user_id)
-                await update.message.reply_text(f"👀 Now watching user `{target_user_id}`. All their interactions will be forwarded here.")
+                await update.message.reply_text(f"👀 Now watching user {target_user_id}. All their interactions will be forwarded here.")
             else: # unwatch
                 _watched_users.discard(target_user_id)
-                await update.message.reply_text(f"✅ Stopped watching user `{target_user_id}`.")
+                await update.message.reply_text(f"✅ Stopped watching user {target_user_id}.")
             save_watched_users()
         except (IndexError, ValueError):
-            await update.message.reply_text(f"Usage: `/{command} <user_id>`")
+            await update.message.reply_text(f"Usage: /{command} <user_id>")
 
     elif command == "listwatched":
         if not _watched_users:
             await update.message.reply_text("No users are currently being watched.")
         else:
-            text = "*👀 Watched Users:*\n" + "\n".join([f"`{uid}`" for uid in _watched_users])
+            text = "*👀 Watched Users:*\n" + "\n".join([f"{uid}" for uid in _watched_users])
             await update.message.reply_markdown_v2(text)
             
     elif command == "getdata":
@@ -1310,9 +1310,9 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             if os.path.exists(user_file):
                 await update.message.reply_document(document=open(user_file, 'rb'))
             else:
-                await update.message.reply_text(f"No data file found for user `{target_user_id}`.")
+                await update.message.reply_text(f"No data file found for user {target_user_id}.")
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/getdata <user_id>`")
+            await update.message.reply_text("Usage: /getdata <user_id>")
 
     elif command == "gethistory":
         try:
@@ -1322,7 +1322,7 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             voice_history = user_data.get('voice_chat_history', [])
             
             if not chat_history and not voice_history:
-                await update.message.reply_text(f"No saved history found for user `{target_user_id}`.")
+                await update.message.reply_text(f"No saved history found for user {target_user_id}.")
                 return
 
             history_text = f"--- Chat History for {target_user_id} ---\n\n"
@@ -1344,7 +1344,7 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             os.remove(history_file)
 
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/gethistory <user_id>`")
+            await update.message.reply_text("Usage: /gethistory <user_id>")
             
     elif command == "globalstats":
         total_credits = 0
@@ -1370,17 +1370,17 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         top_5_users = sorted_users[:5]
 
         text = (f"🌐 *Global Bot Statistics*\n\n"
-                f"💰 *Total Credits in Circulation:* `{total_credits}`\n\n"
+                f"💰 *Total Credits in Circulation:* {total_credits}\n\n"
                 f"📊 *Aggregate Tool Usage:*\n")
         
         for key, value in sorted(total_stats.items(), key=lambda item: item[1], reverse=True):
             if value > 0:
-                text += f"  •  `{key.title()}`: {value}\n"
+                text += f"  •  {key.title()}: {value}\n"
         
         text += "\n🏆 *Top 5 Most Active Users:*\n"
         if top_5_users:
             for i, (user_id, count) in enumerate(top_5_users):
-                text += f"{i+1}\\. `{user_id}` \\({count} actions\\)\n"
+                text += f"{i+1}\\. {user_id} \\({count} actions\\)\n"
         else:
             text += "_No user activity recorded yet\\._"
         
