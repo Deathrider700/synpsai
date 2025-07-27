@@ -473,7 +473,7 @@ async def regenerate_chat_handler(update: Update, context: ContextTypes.DEFAULT_
     if context.user_data['chat_history']: context.user_data['chat_history'].pop()
 
     await query.edit_message_text("🔄 Regenerating response...")
-    return await process_task(query, context, 'chat', from_regenerate=True)
+    return await process_task(update, context, 'chat', from_regenerate=True)
 
 async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_type: str, from_regenerate: bool = False):
     user_id = update.effective_user.id
@@ -996,8 +996,9 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
             logger.error(f"Error broadcasting to {user_id}: {e}")
             fail_count += 1
             
-    await query.edit_message_text(f"Broadcast finished.\n✅ Sent: {success_count}\n❌ Failed: {fail_count}")
-    return await admin_panel(update, context)
+    final_text = f"Broadcast finished\\.\n✅ Sent: {success_count}\n❌ Failed: {fail_count}"
+    await query.edit_message_text(final_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
+    return ADMIN_MAIN
 
 async def admin_add_credits_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = context.user_data.pop('admin_action', None)
