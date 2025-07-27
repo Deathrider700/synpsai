@@ -9,8 +9,10 @@ import random
 import traceback
 from collections import deque
 from datetime import date, datetime
+import asyncio
+from typing import Deque
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, error
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, error, Message
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
@@ -19,7 +21,16 @@ from telegram.constants import ChatAction, ParseMode
 
 TELEGRAM_BOT_TOKEN = "8385126802:AAEqYo6r3IyteSnPgLHUTpAaxdNU1SfHlB4"
 INITIAL_A4F_KEYS = [
-    "ddc-a4f-4c0658a7764c432c9aa8e4a6d409afb3"
+    "ddc-a4f-14783cb2294142ebb17d4bbb0e55d88f",
+    "ddc-a4f-3b6b2b21fd794959bb008593eba6b88b",
+    "ddc-a4f-d59bfe903deb4c3f9b0b724493e3d190",
+    "ddc-a4f-3f75074b54f646cf87fda35032e4690d",
+    "ddc-a4f-ce49dddb591e4bf48589971994a57a74",
+    "ddc-a4f-89e3e7a18a3e467d9ac2d9a38067ca3b",
+    "ddc-a4f-4e580ec612a94f98b1fe344edb812ab0",
+    "ddc-a4f-03a8b8ae52a841e2af8b81c6f02f5e15",
+    "ddc-a4f-1f90259072ad4d5d9077d466f2df42ee",
+    "ddc-a4f-003d19a80e85466ab58eca86eceabbf8", "ddc-a4f-4c0658a7764c432c9aa8e4a6d409afb3"
 ]
 A4F_API_BASE_URL = "https://api.a4f.co/v1"
 ADMIN_CHAT_ID = 7088711806
@@ -30,6 +41,7 @@ REDEEM_CODES_FILE = os.path.join(DATA_DIR, "redeem_codes.json")
 ERROR_LOG_FILE = os.path.join(DATA_DIR, "error_log.txt")
 API_KEYS_STATUS_FILE = os.path.join(DATA_DIR, "api_keys.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+WATCHED_USERS_FILE = os.path.join(DATA_DIR, "watched_users.json")
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -51,10 +63,11 @@ TTS_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
 IMAGE_SIZES = {"Square ⏹️": "1024x1024", "Wide  widescreen": "1792x1024", "Tall 📲": "1024x1792"}
 VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": "1:1"}
 LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio...", "summarize": "📚 Summarizing the document..."}
+REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
-(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, ADMIN_USERS_LIST, ADMIN_KEYS_LIST, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT) = range(19)
+(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, ADMIN_USERS_LIST, ADMIN_KEYS_LIST, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT) = range(22)
 
-_active_api_keys, _settings = [], {}
+_active_api_keys, _settings, _watched_users = [], {}, set()
 
 def load_settings():
     global _settings
@@ -66,6 +79,18 @@ def load_settings():
 
 def save_settings():
     with open(SETTINGS_FILE, 'w') as f: json.dump(_settings, f, indent=4)
+
+def load_watched_users():
+    global _watched_users
+    if os.path.exists(WATCHED_USERS_FILE):
+        with open(WATCHED_USERS_FILE, 'r') as f:
+            _watched_users = set(json.load(f))
+    else:
+        _watched_users = set()
+
+def save_watched_users():
+    with open(WATCHED_USERS_FILE, 'w') as f:
+        json.dump(list(_watched_users), f)
 
 def load_api_keys():
     global _active_api_keys
@@ -94,6 +119,7 @@ def setup_data_directory():
         with open(REDEEM_CODES_FILE, 'w') as f: json.dump({}, f)
     load_api_keys()
     load_settings()
+    load_watched_users()
 
 def load_user_data(user_id):
     user_file = os.path.join(USERS_DIR, f"{user_id}.json")
@@ -168,24 +194,27 @@ def create_paginated_keyboard(model_list, category, page=0):
     buttons.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(buttons)
 
-async def handle_api_error(update_or_query, error_obj):
-    logger.error(f"API Error: {error_obj}")
-    error_message = "❌ An unexpected error occurred."
+def format_error_message(error_obj: Exception) -> str:
     try:
         response = getattr(error_obj, 'response', None)
         if response:
-            details = response.json()
-            error_message = f"❌ *API Error:*\n{escape_markdown_v2(details.get('error', {}).get('message', 'No details from API.'))}"
-        else: error_message = f"❌ *An unexpected error occurred:*\n{escape_markdown_v2(str(error_obj))}"
-    except Exception: error_message = f"❌ *An unexpected API error occurred:*\n{escape_markdown_v2(str(error_obj))}"
-    message_to_edit = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
-    try: await message_to_edit.edit_text(error_message, parse_mode=ParseMode.MARKDOWN_V2)
-    except Exception as e:
-        logger.error(f"Failed to edit message with error: {e}")
-        if hasattr(message_to_edit, 'reply_text'):
-            await message_to_edit.reply_text("An API error occurred and I couldn't update the status message.")
+            status = response.status_code
+            if status >= 500:
+                return f"❌ *API Server Error ({status}):* The server is currently unavailable or overloaded\\. Please try again later\\."
+            else:
+                details = response.json()
+                return f"❌ *API Error ({status}):*\n{escape_markdown_v2(details.get('error', {}).get('message', 'No details from API.'))}"
+        else:
+            return f"❌ *Connection Error:*\n{escape_markdown_v2(str(error_obj))}"
+    except Exception:
+        return f"❌ *An unexpected API error occurred:*\n{escape_markdown_v2(str(error_obj))}"
 
 def is_admin(user_id: int) -> bool: return user_id == ADMIN_CHAT_ID
+
+async def forward_to_admin_if_watched(message: Message, context: ContextTypes.DEFAULT_TYPE):
+    user_id = message.chat.id
+    if user_id in _watched_users and ADMIN_CHAT_ID:
+        await context.bot.forward_message(chat_id=ADMIN_CHAT_ID, from_chat_id=message.chat_id, message_id=message.message_id)
 
 async def notify_admin_of_new_user(context: ContextTypes.DEFAULT_TYPE, user: Update.effective_user, referred_by=None):
     if not ADMIN_CHAT_ID: return
@@ -231,16 +260,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         save_user_data(user.id, user_data)
         await update.message.reply_markdown_v2(f"🎉 Welcome\\! As a new user, you've received a bonus of *{_settings['new_user_bonus']}* credits\\!")
     
-    for key in ['chat_history', 'image_edit_path', 'temp_file_path', 'last_prompt', 'voice_mode_voice', 'voice_chat_history']: context.user_data.pop(key, None)
+    for key in ['chat_history', 'image_edit_path', 'temp_file_path', 'last_prompt', 'voice_mode_voice', 'voice_chat_history', 'mixer_concept_1']: context.user_data.pop(key, None)
     
     keyboard = [
         [InlineKeyboardButton("💬 AI Chat", callback_data="act_chat"), InlineKeyboardButton("🎨 Image Gen", callback_data="act_image")],
         [InlineKeyboardButton("🖼️ Image Edit", callback_data="act_image_edit"), InlineKeyboardButton("🎬 Video Gen", callback_data="act_video")],
         [InlineKeyboardButton("🎙️ TTS", callback_data="act_tts"), InlineKeyboardButton("✍️ Transcription", callback_data="act_transcription")],
-        [InlineKeyboardButton("🎤 Voice Mode", callback_data="act_voice_mode")],
+        [InlineKeyboardButton("🎤 Voice Mode", callback_data="act_voice_mode"), InlineKeyboardButton("🎨 Image Mixer", callback_data="act_mixer")],
+        [InlineKeyboardButton("🌐 Web Pilot", callback_data="act_web")],
         [InlineKeyboardButton("👤 My Profile", callback_data="act_me"), InlineKeyboardButton("🎭 Set Personality", callback_data="act_personality")],
         [InlineKeyboardButton("❓ Help & Info", callback_data="act_help")]
     ]
+    if is_admin(user.id):
+        keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="act_admin")])
+        
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_text = (f"👋 *Welcome, {escape_markdown_v2(user.first_name)}*\\!\n\n"
                     f"I'm your all\\-in\\-one AI assistant, ready to help\\. All tasks cost 1 credit\\.")
@@ -294,8 +327,17 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                  "`/help` \\- Show this help message\\.\n"
                  "`/exit` \\- Stop the current mode \\(like Voice Mode\\)\\.")
     if is_admin(query_or_message.from_user.id):
-        help_text += "\n\n*Admin Commands:*\n`/admin` \\- Open the admin dashboard\\."
-    
+        help_text += ("\n\n*Admin Commands:*\n"
+                      "`/admin` \\- Open the admin dashboard\\.\n"
+                      "`/globalstats` \\- View aggregate stats for all users\\.\n"
+                      "`/msg <id> <msg>` \\- Send a message to a user\\.\n"
+                      "`/cred <id> <amt>` \\- Give/deduct credits\\.\n"
+                      "`/watch <id>` \\- Forward a user's messages to you\\.\n"
+                      "`/unwatch <id>` \\- Stop watching a user\\.\n"
+                      "`/listwatched` \\- List all watched users\\.\n"
+                      "`/gethistory <id>` \\- Get a user's chat history\\.\n"
+                      "`/getdata <id>` \\- Get a user's data file\\.")
+
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
     if update.callback_query:
         await update.callback_query.answer()
@@ -310,7 +352,7 @@ async def new_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await cleanup_files(context.user_data.pop('image_edit_path', None), context.user_data.pop('temp_file_path', None))
-    for key in ['voice_mode_voice', 'voice_chat_history']: context.user_data.pop(key, None)
+    for key in ['voice_mode_voice', 'voice_chat_history', 'mixer_concept_1']: context.user_data.pop(key, None)
     await update.message.reply_text("Action cancelled. Returning to the main menu.")
     await start_command(update, context)
     return ConversationHandler.END
@@ -333,6 +375,10 @@ async def personality_choice_handler(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     choice = query.data.split("_")[1]
+    
+    current_text = query.message.text
+    current_reply_markup = query.message.reply_markup
+
     if choice == "custom":
         user_id = update.effective_user.id
         user_data = load_user_data(user_id)
@@ -340,12 +386,19 @@ async def personality_choice_handler(update: Update, context: ContextTypes.DEFAU
         text = "🎭 *Set Custom AI Personality*\n\n"
         if current_personality: text += f"Current personality: _{escape_markdown_v2(current_personality)}_\n\n"
         text += "Please send me the new personality prompt for the AI \\(e\\.g\\., 'You are a helpful pirate'\\)\\. To remove it, send /clear\\."
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+        
+        if text != current_text:
+            await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_PERSONALITY
+        
     elif choice == "presets":
         buttons = [[InlineKeyboardButton(name, callback_data=f"ps_{name}")] for name in PERSONALITY_PRESETS.keys()]
         buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="p_back")])
-        await query.edit_message_text("🎭 Choose a preset personality:", reply_markup=InlineKeyboardMarkup(buttons))
+        new_reply_markup = InlineKeyboardMarkup(buttons)
+        text = "🎭 Choose a preset personality:"
+        
+        if text != current_text or new_reply_markup != current_reply_markup:
+            await query.edit_message_text(text, reply_markup=new_reply_markup)
         return SELECTING_PRESET_PERSONALITY
 
 async def receive_personality_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -382,11 +435,18 @@ async def action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if category == 'help': return await help_handler(update, context)
     if category == 'me': return await profile_handler(update, context)
     if category == 'personality': return await set_personality_handler(update, context)
+    if category == 'admin': return await admin_panel(update, context)
     if category == 'voice_mode':
         keyboard = [[InlineKeyboardButton(v.capitalize(), callback_data=f"vm_voice_{v}") for v in TTS_VOICES[:3]], [InlineKeyboardButton(v.capitalize(), callback_data=f"vm_voice_{v}") for v in TTS_VOICES[3:]]]
         await query.edit_message_text("🗣️ First, choose a voice for our conversation.", reply_markup=InlineKeyboardMarkup(keyboard))
         return SELECTING_VOICE_FOR_MODE
-        
+    if category == 'mixer':
+        await query.edit_message_text("🎨 Welcome to the Image Mixer Studio!\n\nFirst, send me the primary concept or subject (e.g., 'a cat', 'a knight').")
+        return AWAITING_MIXER_CONCEPT_1
+    if category == 'web':
+        await query.edit_message_text("🌐 Web Pilot Mode initiated. What would you like to know or which URL should I check?")
+        return AWAITING_WEB_PROMPT
+
     context.user_data['category'] = category
     last_model = context.user_data.get(f'last_model_{category}')
     if last_model:
@@ -402,7 +462,8 @@ async def show_model_selection(update_or_query, context: ContextTypes.DEFAULT_TY
     reply_markup = create_paginated_keyboard(model_list, category, page)
     text = f"💎 *Select a Model for {category.replace('_', ' ').title()}*"
     message = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
-    await message.edit_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    if text != message.text or reply_markup != message.reply_markup:
+        await message.edit_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
     return SELECTING_MODEL
 
 async def model_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -474,10 +535,8 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
     user_id = update.effective_user.id
     if not check_and_use_credit(user_id):
         message_text = "🚫 You are out of credits! Use /redeem or refer friends to get more, or wait for your daily refill."
-        if load_user_data(user_id).get("banned", False):
-            message_text = "You are banned from using this bot."
-        elif _settings.get('maintenance', False):
-            message_text = "Bot is in maintenance, please try later."
+        if load_user_data(user_id).get("banned", False): message_text = "You are banned from using this bot."
+        elif _settings.get('maintenance', False): message_text = "Bot is in maintenance, please try later."
         if update.callback_query: await update.callback_query.answer(message_text, show_alert=True)
         else: await update.effective_message.reply_text(message_text)
         return USER_MAIN
@@ -486,6 +545,28 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
     processing_message = await message.reply_text(LOADING_MESSAGES.get(task_type, "⏳ Working..."))
     user_prompt = message.text
     context.user_data['last_prompt'] = user_prompt
+    await forward_to_admin_if_watched(message, context)
+
+    if reasoning_text := REASONING_MESSAGES.get(task_type):
+        await asyncio.sleep(1)
+        await processing_message.edit_text(reasoning_text)
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"Authorization": f"Bearer {get_random_api_key()}", "Content-Type": "application/json"}
+                reasoning_payload = {
+                    "model": "provider-1/sonar-reasoning-pro",
+                    "messages": [{"role": "user", "content": f"Enhance this prompt for an AI generator, making it more descriptive and vivid: '{user_prompt}'"}]
+                }
+                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=reasoning_payload, timeout=120)
+                response.raise_for_status()
+                reasoned_prompt = response.json()['choices'][0]['message']['content']
+                if reasoned_prompt:
+                    user_prompt = reasoned_prompt
+                    await processing_message.edit_text(f"⚙️ Reasoning complete.\n_New prompt: {user_prompt}_")
+                    await asyncio.sleep(2)
+        except Exception as e:
+            logger.warning(f"Reasoning step failed, proceeding with original prompt. Error: {e}")
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -496,17 +577,19 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
             
             async with httpx.AsyncClient() as client:
                 headers = {"Authorization": f"Bearer {api_key}"}
-                user_data = load_user_data(user_id)
                 response = None
                 
                 if task_type == 'chat':
                     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
                     if 'chat_history' not in context.user_data:
                         context.user_data['chat_history'] = deque(maxlen=100)
-                        if (personality := user_data.get("personality")):
+                        if (personality := load_user_data(user_id).get("personality")):
                             context.user_data['chat_history'].append({"role": "system", "content": personality})
                     context.user_data['chat_history'].append({"role": "user", "content": user_prompt})
                     data = {"model": context.user_data['model'], "messages": list(context.user_data['chat_history'])}
+                    user_data = load_user_data(user_id)
+                    user_data['chat_history'] = list(context.user_data['chat_history'])
+                    save_user_data(user_id, user_data)
                     headers["Content-Type"] = "application/json"
                     response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
 
@@ -546,7 +629,7 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                          headers["Content-Type"] = "application/json"
                          response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
                     else:
-                        file_obj = await (update.message.voice or update.message.audio).get_file()
+                        file_obj = await (message.voice or message.audio).get_file()
                         temp_filename = f"temp_{uuid.uuid4()}.ogg"
                         await file_obj.download_to_drive(temp_filename)
                         context.user_data['temp_file_path'] = temp_filename
@@ -560,49 +643,66 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     if not (choices := json_data.get('choices')) or not (result_text := choices[0].get('message', {}).get('content')): raise ValueError("API returned empty response.")
                     if task_type == 'chat':
                         context.user_data['chat_history'].append({"role": "assistant", "content": result_text})
+                        user_data = load_user_data(user_id)
+                        user_data['chat_history'] = list(context.user_data['chat_history'])
+                        save_user_data(user_id, user_data)
                         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
-                        text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/99999 messages_"
-                        try: await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-                        except error.BadRequest: await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+                        text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/unlimited_"
+                        try: 
+                            final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+                        except error.BadRequest: 
+                            final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+                        await forward_to_admin_if_watched(final_message, context)
                     else:
-                        await processing_message.edit_text(f"*Summary:*\n\n{escape_markdown_v2(result_text)}", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                        final_message = await processing_message.edit_text(f"*Summary:*\n\n{escape_markdown_v2(result_text)}", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                        await forward_to_admin_if_watched(final_message, context)
                 
                 elif task_type in ['image', 'image_edit', 'video']:
                      if not (data_list := json_data.get('data')) or not data_list[0].get('url'): raise ValueError("API returned no media URL.")
                      media_url = data_list[0]['url']
                      caption = f"_{escape_markdown_v2(user_prompt)}_"
-                     if task_type in ['image', 'image_edit']: await context.bot.send_photo(update.effective_chat.id, photo=media_url, caption=caption, parse_mode=ParseMode.MARKDOWN)
-                     else: await context.bot.send_video(update.effective_chat.id, video=media_url, caption=caption, parse_mode=ParseMode.MARKDOWN)
+                     if task_type in ['image', 'image_edit']: 
+                         sent_message = await context.bot.send_photo(update.effective_chat.id, photo=media_url, caption=caption, parse_mode=ParseMode.MARKDOWN)
+                     else: 
+                         sent_message = await context.bot.send_video(update.effective_chat.id, video=media_url, caption=caption, parse_mode=ParseMode.MARKDOWN)
+                     await forward_to_admin_if_watched(sent_message, context)
                      await processing_message.delete()
-                     await update.effective_message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                     await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
 
                 elif task_type == 'tts':
-                    await context.bot.send_voice(update.effective_chat.id, voice=response.content, caption=f"🗣️ Voice: {context.user_data.get('tts_voice', 'alloy').capitalize()}")
+                    sent_message = await context.bot.send_voice(message.chat_id, voice=response.content, caption=f"🗣️ Voice: {context.user_data.get('tts_voice', 'alloy').capitalize()}")
+                    await forward_to_admin_if_watched(sent_message, context)
                     await processing_message.delete()
-                    await update.effective_message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                    await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
                 
                 elif task_type == 'transcription':
                     if (transcribed_text := json_data.get('text')) is None: raise ValueError("API did not return a transcription.")
-                    await processing_message.edit_text(f"*Transcription:*\n\n_{escape_markdown_v2(transcribed_text)}_", parse_mode=ParseMode.MARKDOWN_V2)
-                    await update.effective_message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                    final_message = await processing_message.edit_text(f"*Transcription:*\n\n_{escape_markdown_v2(transcribed_text)}_", parse_mode=ParseMode.MARKDOWN_V2)
+                    await forward_to_admin_if_watched(final_message, context)
+                    await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
                 
+                user_data = load_user_data(user_id)
                 user_data['stats'][task_type] = user_data['stats'].get(task_type, 0) + 1
                 save_user_data(user_id, user_data)
                 
                 if task_type == 'chat': return AWAITING_PROMPT
                 else: return USER_MAIN
 
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code in [401, 429] and attempt < max_retries - 1:
-                logger.warning(f"API key failed (status {e.response.status_code}). Retrying... ({attempt + 1}/{max_retries})")
-                await processing_message.edit_text(f"⏳ API key issue, automatically retrying... ({attempt + 2}/{max_retries})"); continue
-            else: refund_credit(user_id); await handle_api_error(processing_message, e); break
         except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
-            logger.error(f"An error occurred in process_task: {e}", exc_info=True)
-            refund_credit(user_id); await processing_message.edit_text(f"❌ *API Response Error:*\n{escape_markdown_v2(str(e))}", parse_mode=ParseMode.MARKDOWN_V2); break
+            logger.error(f"Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                await processing_message.edit_text("⏳ Still thinking...")
+                await asyncio.sleep(2)
+                continue
+            else:
+                refund_credit(user_id)
+                error_message = format_error_message(e)
+                await processing_message.edit_text(error_message, parse_mode=ParseMode.MARKDOWN_V2)
+                break
         except Exception as e:
             logger.error(f"A critical internal error occurred in process_task: {e}", exc_info=True)
-            refund_credit(user_id); await processing_message.edit_text("❌ A critical internal error occurred. Credit has been refunded."); break
+            refund_credit(user_id)
+            await processing_message.edit_text("❌ A critical internal error occurred. Credit has been refunded."); break
 
     await cleanup_files(context.user_data.pop('image_edit_path', None), context.user_data.pop('temp_file_path', None))
     return USER_MAIN
@@ -612,6 +712,7 @@ async def tts_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def audio_transcription_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await process_task(update, context, 'transcription')
 async def edit_prompt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: return await process_task(update, context, 'image_edit')
 async def image_for_edit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await forward_to_admin_if_watched(update.message, context)
     if not update.message.photo: await update.message.reply_text("That's not an image. Please send a photo."); return AWAITING_IMAGE_FOR_EDIT
     await update.message.reply_text("✅ Image received! Now, tell me how to edit it.")
     photo_file = await update.message.photo[-1].get_file()
@@ -632,6 +733,7 @@ async def voice_mode_start_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
+    await forward_to_admin_if_watched(update.message, context)
     if not check_and_use_credit(user_id):
         await update.message.reply_text("🚫 You're out of credits! Use /redeem or refer a friend. Voice mode stopped.")
         for key in ['voice_mode_voice', 'voice_chat_history']: context.user_data.pop(key, None)
@@ -642,59 +744,72 @@ async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT
     temp_filename = f"temp_{uuid.uuid4()}.ogg"
     ai_response_text = ""
     
-    try:
-        async with httpx.AsyncClient() as client:
-            api_key = get_random_api_key()
-            if not api_key:
-                await processing_message.edit_text("❌ No active API keys. Please contact the administrator."); refund_credit(user_id); return AWAITING_VOICE_MODE_INPUT
-            headers = {"Authorization": f"Bearer {api_key}"}
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                api_key = get_random_api_key()
+                if not api_key:
+                    await processing_message.edit_text("❌ No active API keys. Please contact the administrator."); refund_credit(user_id); return AWAITING_VOICE_MODE_INPUT
+                headers = {"Authorization": f"Bearer {api_key}"}
 
-            await processing_message.edit_text("👂 Transcribing...")
-            file_obj = await update.message.voice.get_file()
-            await file_obj.download_to_drive(temp_filename)
-            
-            with open(temp_filename, 'rb') as f:
-                transcription_response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': 'provider-6/distil-whisper-large-v3-en'}, timeout=120)
-            transcription_response.raise_for_status()
-            transcribed_text = transcription_response.json().get('text')
-            if not transcribed_text: raise ValueError("Transcription failed or returned empty text.")
-            
-            context.user_data['voice_chat_history'].append({"role": "user", "content": transcribed_text})
-            
-            await processing_message.edit_text("🤔 Thinking...")
-            chat_data = {"model": 'provider-3/gpt-4o-mini-search-preview', "messages": list(context.user_data['voice_chat_history'])}
-            headers["Content-Type"] = "application/json"
-            chat_response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=chat_data, timeout=120)
-            chat_response.raise_for_status()
-            
-            ai_response_text = chat_response.json().get('choices', [{}])[0].get('message', {}).get('content')
-            if not ai_response_text: raise ValueError("Chat completion returned empty response.")
-            context.user_data['voice_chat_history'].append({"role": "assistant", "content": ai_response_text})
+                await processing_message.edit_text(f"👂 Transcribing...")
+                file_obj = await update.message.voice.get_file()
+                await file_obj.download_to_drive(temp_filename)
+                
+                with open(temp_filename, 'rb') as f:
+                    transcription_response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': 'provider-6/distil-whisper-large-v3-en'}, timeout=120)
+                transcription_response.raise_for_status()
+                transcribed_text = transcription_response.json().get('text')
+                if not transcribed_text: raise ValueError("Transcription failed or returned empty text.")
+                
+                context.user_data['voice_chat_history'].append({"role": "user", "content": transcribed_text})
+                
+                await processing_message.edit_text(f"🤔 Thinking...")
+                chat_data = {"model": 'provider-3/gpt-4o-mini-search-preview', "messages": list(context.user_data['voice_chat_history'])}
+                headers["Content-Type"] = "application/json"
+                chat_response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=chat_data, timeout=120)
+                chat_response.raise_for_status()
+                
+                ai_response_text = chat_response.json().get('choices', [{}])[0].get('message', {}).get('content')
+                if not ai_response_text: raise ValueError("Chat completion returned empty response.")
+                context.user_data['voice_chat_history'].append({"role": "assistant", "content": ai_response_text})
 
-            await processing_message.edit_text("🗣️ Speaking...")
-            tts_data = {"model": "provider-3/tts-1", "input": ai_response_text, "voice": context.user_data['voice_mode_voice']}
-            tts_response = await client.post(f"{A4F_API_BASE_URL}/audio/speech", headers=headers, json=tts_data, timeout=60)
-            tts_response.raise_for_status()
+                user_data = load_user_data(user_id)
+                user_data['voice_chat_history'] = list(context.user_data['voice_chat_history'])
+                save_user_data(user_id, user_data)
 
-            await context.bot.send_voice(chat_id=user_id, voice=tts_response.content)
-            await processing_message.delete()
-            
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400 and "speech" in str(e.request.url):
-            logger.error(f"TTS API failed for text: {ai_response_text}. Sending as text.", exc_info=True)
-            await processing_message.edit_text("⚠️ Could not generate voice, sending response as text:")
-            await update.message.reply_text(ai_response_text)
-        else:
-            logger.error(f"Error in voice_mode_input_handler: {e}", exc_info=True)
+                await processing_message.edit_text(f"🗣️ Speaking...")
+                tts_data = {"model": "provider-3/tts-1", "input": ai_response_text, "voice": context.user_data['voice_mode_voice']}
+                tts_response = await client.post(f"{A4F_API_BASE_URL}/audio/speech", headers=headers, json=tts_data, timeout=60)
+                tts_response.raise_for_status()
+
+                sent_message = await context.bot.send_voice(chat_id=user_id, voice=tts_response.content)
+                await forward_to_admin_if_watched(sent_message, context)
+                await processing_message.delete()
+                break
+                
+        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
+            logger.error(f"Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                await processing_message.edit_text("⏳ Still thinking...")
+                await asyncio.sleep(2)
+                continue
+            else:
+                refund_credit(user_id)
+                error_message = format_error_message(e)
+                if "speech" in str(getattr(e, 'request', '') and getattr(e.request, 'url', '')):
+                     await processing_message.edit_text("⚠️ Could not generate voice, sending response as text:")
+                     await update.message.reply_text(ai_response_text)
+                else:
+                     await processing_message.edit_text(error_message, parse_mode=ParseMode.MARKDOWN_V2)
+                break
+        except Exception as e:
+            logger.error(f"A critical error occurred in voice_mode_input_handler: {e}", exc_info=True)
             refund_credit(user_id)
-            await processing_message.edit_text(f"❌ An API error occurred during processing. Credit refunded. Please try again.")
-    except Exception as e:
-        logger.error(f"A critical error occurred in voice_mode_input_handler: {e}", exc_info=True)
-        refund_credit(user_id)
-        await processing_message.edit_text(f"❌ An error occurred during processing. Credit refunded. Please try again.")
-    finally:
-        await cleanup_files(temp_filename)
-        
+            await processing_message.edit_text(f"❌ An error occurred during processing. Credit refunded. Please try again."); break
+    
+    await cleanup_files(temp_filename)
     return AWAITING_VOICE_MODE_INPUT
 
 async def exit_voice_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -722,6 +837,7 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     if not doc or not doc.file_name.lower().endswith(('.txt', '.md', '.py', '.json', '.csv')): return
     
+    await forward_to_admin_if_watched(update.message, context)
     if not check_and_use_credit(user_id):
         await update.message.reply_text("🚫 You are out of credits to summarize this document."); return
         
@@ -749,6 +865,137 @@ async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         refund_credit(user_id)
         await processing_message.edit_text(f"❌ Error processing document: {e}")
         logger.error(f"Error in document_handler: {e}", exc_info=True)
+
+async def mixer_concept_1_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await forward_to_admin_if_watched(update.message, context)
+    context.user_data['mixer_concept_1'] = update.message.text
+    await update.message.reply_text("✅ Got it. Now, send the second concept, style, or modifier (e.g., 'a powerful wizard', 'in a cyberpunk city').")
+    return AWAITING_MIXER_CONCEPT_2
+
+async def mixer_concept_2_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    await forward_to_admin_if_watched(update.message, context)
+    if not check_and_use_credit(user_id):
+        await update.message.reply_text("🚫 You are out of credits for the Image Mixer.")
+        return USER_MAIN
+
+    concept_1 = context.user_data.pop('mixer_concept_1')
+    concept_2 = update.message.text
+    
+    processing_message = await update.message.reply_text(LOADING_MESSAGES.get("image"))
+    if reasoning_text := REASONING_MESSAGES.get("mixer"):
+        await asyncio.sleep(1)
+        await processing_message.edit_text(reasoning_text)
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                api_key = get_random_api_key()
+                if not api_key:
+                    await processing_message.edit_text("❌ No active API keys."); return USER_MAIN
+                
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                
+                creative_brief = (
+                    "You are a creative director AI. Your task is to merge two user-provided concepts into a single, highly detailed, "
+                    "and visually descriptive prompt for an AI image generator. Combine the elements logically and creatively. "
+                    f"Merge these concepts: '{concept_1}' and '{concept_2}'"
+                )
+                
+                data = { "model": "provider-3/gpt-4o-mini-search-preview", "messages": [{"role": "user", "content": creative_brief}] }
+                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
+                response.raise_for_status()
+                
+                final_prompt = response.json()['choices'][0]['message']['content']
+                if not final_prompt: raise ValueError("Creative Director AI failed to generate a prompt.")
+                
+                await processing_message.edit_text(f"🎨 Painting your masterpiece...\n\n_Final Prompt: {final_prompt}_")
+                
+                image_data = { "model": "provider-4/imagen-3", "prompt": final_prompt, "size": "1024x1024" }
+                image_response = await client.post(f"{A4F_API_BASE_URL}/images/generations", headers=headers, json=image_data, timeout=180)
+                image_response.raise_for_status()
+                
+                image_url = image_response.json()['data'][0]['url']
+                if not image_url: raise ValueError("Image generation failed to return a URL.")
+
+                sent_message = await update.message.reply_photo(photo=image_url, caption=f"_{escape_markdown_v2(final_prompt)}_", parse_mode=ParseMode.MARKDOWN)
+                await forward_to_admin_if_watched(sent_message, context)
+                await processing_message.delete()
+
+                user_data = load_user_data(user_id)
+                user_data['stats']['image'] = user_data['stats'].get('image', 0) + 1
+                save_user_data(user_id, user_data)
+
+                return USER_MAIN
+        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
+            logger.error(f"Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                await processing_message.edit_text("⏳ Still thinking...")
+                await asyncio.sleep(2)
+                continue
+            else:
+                refund_credit(user_id)
+                error_message = format_error_message(e)
+                await processing_message.edit_text(error_message, parse_mode=ParseMode.MARKDOWN_V2)
+                break
+        except Exception as e:
+            logger.error(f"Critical error in Image Mixer: {e}", exc_info=True)
+            refund_credit(user_id)
+            await processing_message.edit_text("❌ A critical internal error occurred. Credit refunded."); break
+            
+    return USER_MAIN
+
+async def web_pilot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    if not check_and_use_credit(user_id):
+        await update.message.reply_text("🚫 You are out of credits for Web Pilot.")
+        return USER_MAIN
+
+    await forward_to_admin_if_watched(update.message, context)
+    processing_message = await update.message.reply_text("🌐 Browsing the web...")
+    prompt = update.message.text
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                api_key = get_random_api_key()
+                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                
+                data = {
+                    "model": "provider-3/gpt-4o-mini-search-preview",
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                
+                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=180)
+                response.raise_for_status()
+
+                json_data = response.json()
+                if not (choices := json_data.get('choices')) or not (result_text := choices[0].get('message', {}).get('content')):
+                    raise ValueError("Web Pilot returned an empty response.")
+
+                final_message = await processing_message.edit_text(result_text)
+                await forward_to_admin_if_watched(final_message, context)
+                return AWAITING_WEB_PROMPT
+                
+        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
+            logger.error(f"Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                await processing_message.edit_text("⏳ Still thinking...")
+                await asyncio.sleep(2)
+                continue
+            else:
+                refund_credit(user_id)
+                error_message = format_error_message(e)
+                await processing_message.edit_text(error_message, parse_mode=ParseMode.MARKDOWN_V2)
+                break
+        except Exception as e:
+            logger.error(f"A critical error occurred in Web Pilot Mode: {e}", exc_info=True)
+            refund_credit(user_id)
+            await processing_message.edit_text("❌ A critical internal error occurred. Credit refunded."); break
+    
+    return AWAITING_WEB_PROMPT
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not is_admin(update.effective_user.id):
@@ -850,8 +1097,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif action == "clear_errors":
         if os.path.exists(ERROR_LOG_FILE):
              os.remove(ERROR_LOG_FILE)
-             await query.edit_message_text("✅ Error log cleared\\.")
-        await admin_panel(Update(query.update_id, message=query.message), context)
+             await query.edit_message_text("✅ Error log cleared\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]))
         return ADMIN_MAIN
         
     elif action == "back":
@@ -892,7 +1138,7 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                              f"*Personality:* _{escape_markdown_v2(user_data.get('personality') or 'Not set')}_\n*Banned:* {'Yes' if user_data.get('banned') else 'No'}")
                 
                 keyboard = [
-                    [InlineKeyboardButton("💰 Add Credits", callback_data=f"admin_user_cred_{target_user_id}"),
+                    [InlineKeyboardButton("💰 Add/Deduct Credits", callback_data=f"admin_user_cred_{target_user_id}"),
                      InlineKeyboardButton("🚫 Ban" if not user_data.get('banned') else "✅ Unban", callback_data=f"admin_user_ban_{target_user_id}")],
                     [InlineKeyboardButton("⬅️ Back to Admin", callback_data="admin_back")]
                 ]
@@ -942,7 +1188,7 @@ async def admin_user_actions_handler(update: Update, context: ContextTypes.DEFAU
     
     if action == "cred":
         context.user_data['admin_action'] = f'add_credits_{target_user_id}'
-        await query.edit_message_text(f"How many credits to add to user `{target_user_id}`?")
+        await query.edit_message_text(f"How many credits to add/deduct from user `{target_user_id}`? (Use a negative number to deduct)")
         return ADMIN_AWAITING_INPUT
         
     elif action == "ban":
@@ -978,6 +1224,7 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
         try:
             await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.MARKDOWN_V2)
             success_count += 1
+            await asyncio.sleep(0.1) 
         except (error.Forbidden, error.BadRequest):
             fail_count += 1
         except Exception as e:
@@ -998,12 +1245,146 @@ async def admin_add_credits_handler(update: Update, context: ContextTypes.DEFAUL
         user_data = load_user_data(target_user_id)
         user_data['credits'] += amount
         save_user_data(target_user_id, user_data)
-        await update.message.reply_markdown_v2(f"✅ Gave *{amount}* credits to user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
+        operation = "Gave" if amount >= 0 else "Deducted"
+        await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
     except (IndexError, ValueError):
         await update.message.reply_text("Invalid amount.")
         
     await admin_panel(update, context)
     return ADMIN_MAIN
+
+async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔️ This command is for administrators only.")
+        return
+
+    command = update.message.text.split()[0][1:].lower()
+    
+    if command == "msg":
+        try:
+            target_user_id = int(context.args[0])
+            message_text = " ".join(context.args[1:])
+            if not message_text:
+                await update.message.reply_text("Usage: `/msg <user_id> <message>`")
+                return
+            await context.bot.send_message(chat_id=target_user_id, text=f"✉️ A message from the admin:\n\n{message_text}")
+            await update.message.reply_text(f"✅ Message sent to user `{target_user_id}`.")
+        except (IndexError, ValueError):
+            await update.message.reply_text("Usage: `/msg <user_id> <message>`")
+    
+    elif command == "cred":
+        try:
+            target_user_id, amount = int(context.args[0]), int(context.args[1])
+            user_data = load_user_data(target_user_id)
+            user_data['credits'] += amount
+            save_user_data(target_user_id, user_data)
+            operation = "Gave" if amount >= 0 else "Deducted"
+            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
+        except (IndexError, ValueError):
+            await update.message.reply_text("Usage: `/cred <user_id> <amount>` (use negative for deduction)")
+
+    elif command in ["watch", "unwatch"]:
+        try:
+            target_user_id = int(context.args[0])
+            if command == "watch":
+                _watched_users.add(target_user_id)
+                await update.message.reply_text(f"👀 Now watching user `{target_user_id}`. All their interactions will be forwarded here.")
+            else: # unwatch
+                _watched_users.discard(target_user_id)
+                await update.message.reply_text(f"✅ Stopped watching user `{target_user_id}`.")
+            save_watched_users()
+        except (IndexError, ValueError):
+            await update.message.reply_text(f"Usage: `/{command} <user_id>`")
+
+    elif command == "listwatched":
+        if not _watched_users:
+            await update.message.reply_text("No users are currently being watched.")
+        else:
+            text = "*👀 Watched Users:*\n" + "\n".join([f"`{uid}`" for uid in _watched_users])
+            await update.message.reply_markdown_v2(text)
+            
+    elif command == "getdata":
+        try:
+            target_user_id = int(context.args[0])
+            user_file = os.path.join(USERS_DIR, f"{target_user_id}.json")
+            if os.path.exists(user_file):
+                await update.message.reply_document(document=open(user_file, 'rb'))
+            else:
+                await update.message.reply_text(f"No data file found for user `{target_user_id}`.")
+        except (IndexError, ValueError):
+            await update.message.reply_text("Usage: `/getdata <user_id>`")
+
+    elif command == "gethistory":
+        try:
+            target_user_id = int(context.args[0])
+            user_data = load_user_data(target_user_id)
+            chat_history = user_data.get('chat_history', [])
+            voice_history = user_data.get('voice_chat_history', [])
+            
+            if not chat_history and not voice_history:
+                await update.message.reply_text(f"No saved history found for user `{target_user_id}`.")
+                return
+
+            history_text = f"--- Chat History for {target_user_id} ---\n\n"
+            if chat_history:
+                history_text += "--- Text Chat ---\n"
+                for msg in chat_history:
+                    history_text += f"[{msg['role'].upper()}]: {msg['content']}\n"
+            
+            if voice_history:
+                history_text += "\n--- Voice Chat ---\n"
+                for msg in voice_history:
+                    history_text += f"[{msg['role'].upper()}]: {msg['content']}\n"
+
+            history_file = f"history_{target_user_id}.txt"
+            with open(history_file, "w", encoding="utf-8") as f:
+                f.write(history_text)
+            
+            await update.message.reply_document(document=open(history_file, 'rb'))
+            os.remove(history_file)
+
+        except (IndexError, ValueError):
+            await update.message.reply_text("Usage: `/gethistory <user_id>`")
+            
+    elif command == "globalstats":
+        total_credits = 0
+        total_stats = {k: 0 for k in LOADING_MESSAGES.keys()}
+        user_files = [f for f in os.listdir(USERS_DIR) if f.endswith('.json')]
+        user_activity = {}
+
+        for user_file in user_files:
+            user_id_str = user_file.split('.')[0]
+            with open(os.path.join(USERS_DIR, user_file), 'r') as f:
+                data = json.load(f)
+                total_credits += data.get('credits', 0)
+                user_stats = data.get('stats', {})
+                activity_count = 0
+                for key in total_stats:
+                    usage = user_stats.get(key, 0)
+                    total_stats[key] += usage
+                    activity_count += usage
+                if activity_count > 0:
+                    user_activity[user_id_str] = activity_count
+
+        sorted_users = sorted(user_activity.items(), key=lambda item: item[1], reverse=True)
+        top_5_users = sorted_users[:5]
+
+        text = (f"🌐 *Global Bot Statistics*\n\n"
+                f"💰 *Total Credits in Circulation:* `{total_credits}`\n\n"
+                f"📊 *Aggregate Tool Usage:*\n")
+        
+        for key, value in sorted(total_stats.items(), key=lambda item: item[1], reverse=True):
+            if value > 0:
+                text += f"  •  `{key.title()}`: {value}\n"
+        
+        text += "\n🏆 *Top 5 Most Active Users:*\n"
+        if top_5_users:
+            for i, (user_id, count) in enumerate(top_5_users):
+                text += f"{i+1}\\. `{user_id}` \\({count} actions\\)\n"
+        else:
+            text += "_No user activity recorded yet\\._"
+        
+        await update.message.reply_markdown_v2(text)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
@@ -1056,6 +1437,9 @@ def main() -> None:
             ],
             SELECTING_VOICE_FOR_MODE: [CallbackQueryHandler(voice_mode_start_handler, pattern="^vm_voice_")],
             AWAITING_VOICE_MODE_INPUT: [MessageHandler(filters.VOICE, voice_mode_input_handler)],
+            AWAITING_MIXER_CONCEPT_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_1_handler)],
+            AWAITING_MIXER_CONCEPT_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_2_handler)],
+            AWAITING_WEB_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, web_pilot_handler)],
         },
         fallbacks=[CommandHandler("start", start_command), CommandHandler("cancel", cancel_handler), CommandHandler("exit", exit_voice_mode)],
         conversation_timeout=1800, name="user_conversation", persistent=False, allow_reentry=True
@@ -1085,6 +1469,9 @@ def main() -> None:
     application.add_handler(CommandHandler("newchat", new_chat_command))
     application.add_handler(CommandHandler(["me", "mycredits"], profile_handler))
     application.add_handler(CommandHandler("redeem", redeem_command))
+    
+    admin_cmds = ["msg", "cred", "watch", "unwatch", "listwatched", "getdata", "gethistory", "globalstats"]
+    application.add_handler(CommandHandler(admin_cmds, admin_command_handler))
 
     application.add_handler(MessageHandler(filters.Document.ALL, document_handler))
     
