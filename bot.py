@@ -35,15 +35,15 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 5, "referral_bonus": 5, "maintenance": False}
+DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus": 5, "maintenance": False}
 
 MODELS = {
-    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/gpt-4.1-mini", "provider-6/gpt-4.1-nano", "provider-3/gpt-4.1-nano", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/o3-medium", "provider-6/o3-high", "provider-6/o3-low", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
-    "image": ["provider-4/imagen-3", "provider-6/sana-1.5-flash", "provider-1/FLUX.1-schnell", "provider-2/FLUX.1-schnell", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-1-pro", "provider-6/FLUX.1-kontext-dev", "provider-2/FLUX.1-schnell-v2", "provider-6/FLUX.1-kontext-max"],
+    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
+    "image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-1/FLUX.1-schnell", "provider-6/FLUX.1-1-pro", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5-flash"],
     "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-6/black-forest-labs-flux-1-kontext-max", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
-    "tts": ["provider-3/tts-1", "provider-6/sonic-2", "provider-6/sonic"],
-    "transcription": ["provider-2/whisper-1", "provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en", "provider-3/gpt-4o-mini-transcribe"],
+    "tts": ["provider-3/tts-1"],
+    "transcription": ["provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en"],
     "summarize": ["provider-1/sonar"]
 }
 MODELS_PER_PAGE = 5
@@ -316,9 +316,11 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return ConversationHandler.END
 
 async def set_personality_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    buttons = [[InlineKeyboardButton("📝 Custom", callback_data="p_custom")],
-               [InlineKeyboardButton("🤖 Presets", callback_data="p_presets")]]
-    await update.callback_query.edit_message_text("🎭 How would you like to set the personality?", reply_markup=InlineKeyboardMarkup(buttons))
+    buttons = [[InlineKeyboardButton("📝 Custom", callback_data="p_custom")]]
+    await update.callback_query.edit_message_text(
+        "🎭 How would you like to set the personality?",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
     return AWAITING_PERSONALITY
 
 async def personality_command_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
