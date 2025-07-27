@@ -1,0 +1,406 @@
+{
+    "SYPNS-C0A199AC4437-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-3A6D6F0D393F-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-8BFAE115431B-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-BA05C1DCD88A-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-719B25588C52-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-97117A5109DB-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-1F0868FADE56-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-A961E32EDDAE-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-DE4E26420FDD-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-E68C835D7480-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-D65F90EF4EAC-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-B79C0BAA21B0-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-710DD31FDB22-BOT": {
+        "credits": 10,
+        "is_active": true
+    },
+    "SYPNS-1F370542DBD7-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-C81624243448-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-B30979392C63-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-A26E59A37C51-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-973FA8DFC1FF-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-FA9741F0D82F-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-9EF2964D4EAC-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-5D5CE40618F1-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-8820476913EA-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-29ED4CB7F099-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-242E4868EDD3-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-CAE86835845F-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-FC7F18059004-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-60C169FB0595-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-E7AF4A423E4F-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-7A27989F082C-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-28F091774D12-BOT": {
+        "credits": 10,
+        "is_active": false
+    },
+    "SYPNS-8B3BFE43A964-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-AD346479D85B-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-B46B822002FC-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-61D0D1D0B02A-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-D2A7190E70A8-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-C81482AEE007-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-099C74A01233-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-6D5D98A8219C-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-06A974A0D084-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-30B68597AE75-BOT": {
+        "credits": 200,
+        "is_active": true
+    },
+    "SYPNS-37805B997AFF-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-259F01F991DF-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-C44DA137990C-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-A8915E76D01A-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-1235A92528C7-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-73673F9F9047-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-41F37663C21B-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-87F748137970-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-01AF98F1B6AE-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-5F09654497B2-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-B1B6ED02785A-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-3A390DE04897-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-A2D537F6CEE3-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-AAFA40E7BD8B-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-84B3A8A0B120-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-ED3D22C6DC43-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-926465FFD239-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-5887E738F9C5-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-34B1C3F6CF9F-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-7D4E181202DF-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-EB4C63A30B76-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-68C33764B588-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-AC53828A2D7E-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-0337E2DBEDC8-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-07FE53BFC314-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-7F67A9C5341D-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-D6B87CCD44DA-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-B67324EEC9D9-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-A076C8AA0008-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-5E62439C6B09-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-B6CF886E61BB-BOT": {
+        "credits": 50,
+        "is_active": true
+    },
+    "SYPNS-D4552ED6CDDA-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-AB25E845281F-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-4F5F212E9DD0-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-0A5F254D9A37-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-B0EF4B14F045-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-10BC7B64B5FB-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-B5B703E138D2-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-820DB4DFEBEC-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-3C6820F0F477-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-32E55F949D8C-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-74AD58501E16-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-D995532AE0A4-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-B5531B83C65F-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-F5ADF9D005B9-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-BA0E37FEE60C-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-1246CE7FA791-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-657B08E2E917-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-DFDD0DBCC9C7-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-513C7B71274F-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-3064C33C1946-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-E05118E81B7B-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-2399D578FB88-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-27DEE3887845-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-E0A198C145A1-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-F7FB0307C68D-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-FC85A6C92131-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-F6F8D0AE84ED-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-60CE26C87679-BOT": {
+        "credits": 20,
+        "is_active": false
+    },
+    "SYPNS-84FD0C166202-BOT": {
+        "credits": 20,
+        "is_active": true
+    },
+    "SYPNS-EC39F0A0DB05-BOT": {
+        "credits": 20,
+        "is_active": true
+    }
+}
