@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 5, "referral_bonus": 5, "maintenance": False}
 
 MODELS = {
-    "chat": ["provider-1/chatgpt-4o-latest", "provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/gpt-4.1-mini", "provider-6/gpt-4.1-nano", "provider-3/gpt-4.1-nano", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/o3-medium", "provider-6/o3-high", "provider-6/o3-low", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
+    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/gpt-4.1-mini", "provider-6/gpt-4.1-nano", "provider-3/gpt-4.1-nano", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/o3-medium", "provider-6/o3-high", "provider-6/o3-low", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
     "image": ["provider-4/imagen-3", "provider-4/imagen-4", "provider-6/sana-1.5-flash", "provider-1/FLUX.1-schnell", "provider-2/FLUX.1-schnell", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-1-pro", "provider-6/FLUX.1-kontext-dev", "provider-2/FLUX.1-schnell-v2", "provider-6/FLUX.1-kontext-max"],
     "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-6/black-forest-labs-flux-1-kontext-max", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
@@ -263,13 +263,17 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     stats_text = "\n".join([f"  •  `{k.title()}`: {v}" for k, v in stats.items() if v > 0]) or "_No activity yet\\._"
     
     credits = "♾️ Unlimited (Admin)" if is_admin(user_id) else user_data.get('credits', 0)
+    
+    bot_username = (await context.bot.get_me()).username
+    referral_code = user_data.get('referral_code', 'N/A')
+    referral_link = f"https://t.me/{bot_username}?start={referral_code}"
 
     text = (f"👤 *My Profile*\n\n"
             f"💰 *Credits:* `{credits}`\n"
-            f"🤝 *Referral Code:* `{escape_markdown_v2(user_data.get('referral_code', 'N/A'))}`\n"
             f"📈 *Users Referred:* `{user_data.get('referrals_made', 0)}`\n\n"
+            f"🤝 *Your Referral Link:*\n`{escape_markdown_v2(referral_link)}`\n\n"
             f"📊 *Usage Statistics*\n{stats_text}\n\n"
-            f"Normal users receive *{_settings['daily_credits']}* credits daily\\. You can get more by using a redeem code with the /redeem command or by referring new users\\.")
+            f"Share your link to earn *{_settings['referral_bonus']}* credits for each new user who joins\\! You can also use /redeem\\.")
             
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
     if update.callback_query:
@@ -464,20 +468,9 @@ async def tts_voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await query.edit_message_text("✅ Voice selected.\n\n✍️ Now, send me the text you want me to say.")
     return AWAITING_TTS_INPUT
 
-async def regenerate_chat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query; await query.answer()
-    if 'chat_history' not in context.user_data or len(context.user_data['chat_history']) < 2:
-        await query.edit_message_text("No previous chat to regenerate.", reply_markup=None); return USER_MAIN
-    
-    context.user_data['chat_history'].pop()
-    if context.user_data['chat_history']: context.user_data['chat_history'].pop()
-
-    await query.edit_message_text("🔄 Regenerating response...")
-    return await process_task(update, context, 'chat', from_regenerate=True)
-
-async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_type: str, from_regenerate: bool = False):
+async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_type: str):
     user_id = update.effective_user.id
-    if not from_regenerate and not check_and_use_credit(user_id):
+    if not check_and_use_credit(user_id):
         message_text = "🚫 You are out of credits! Use /redeem or refer friends to get more, or wait for your daily refill."
         if load_user_data(user_id).get("banned", False):
             message_text = "You are banned from using this bot."
@@ -487,17 +480,10 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
         else: await update.effective_message.reply_text(message_text)
         return USER_MAIN
 
-    if from_regenerate:
-        if not check_and_use_credit(user_id):
-            await update.callback_query.answer("🚫 You are out of credits!", show_alert=True)
-            return USER_MAIN
-        processing_message = update.effective_message
-        user_prompt = context.user_data.get('last_prompt', '')
-    else:
-        message = update.effective_message
-        processing_message = await message.reply_text(LOADING_MESSAGES.get(task_type, "⏳ Working..."))
-        user_prompt = message.text
-        context.user_data['last_prompt'] = user_prompt
+    message = update.effective_message
+    processing_message = await message.reply_text(LOADING_MESSAGES.get(task_type, "⏳ Working..."))
+    user_prompt = message.text
+    context.user_data['last_prompt'] = user_prompt
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -514,11 +500,10 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                 if task_type == 'chat':
                     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
                     if 'chat_history' not in context.user_data:
-                        context.user_data['chat_history'] = deque(maxlen=20)
+                        context.user_data['chat_history'] = deque(maxlen=100)
                         if (personality := user_data.get("personality")):
                             context.user_data['chat_history'].append({"role": "system", "content": personality})
-                    if not from_regenerate:
-                        context.user_data['chat_history'].append({"role": "user", "content": user_prompt})
+                    context.user_data['chat_history'].append({"role": "user", "content": user_prompt})
                     data = {"model": context.user_data['model'], "messages": list(context.user_data['chat_history'])}
                     headers["Content-Type"] = "application/json"
                     response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
@@ -573,8 +558,8 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     if not (choices := json_data.get('choices')) or not (result_text := choices[0].get('message', {}).get('content')): raise ValueError("API returned empty response.")
                     if task_type == 'chat':
                         context.user_data['chat_history'].append({"role": "assistant", "content": result_text})
-                        keyboard = [[InlineKeyboardButton("🔄 Regenerate", callback_data="regen_chat"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
-                        text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/20 messages_"
+                        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                        text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/99999 messages_"
                         try: await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
                         except error.BadRequest: await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
                     else:
@@ -638,7 +623,7 @@ async def voice_mode_start_handler(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
     voice = query.data.split('_')[-1]
     context.user_data['voice_mode_voice'] = voice
-    context.user_data['voice_chat_history'] = deque(maxlen=20)
+    context.user_data['voice_chat_history'] = deque(maxlen=100)
     context.user_data['voice_chat_history'].append({"role": "system", "content": "You are a voice assistant. Keep your responses concise and suitable for voice conversion."})
     await query.edit_message_text(f"🎤 Voice Mode Started with *{voice.capitalize()}* voice\\. Each voice message costs 1 credit\\.\n\nSend me a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
     return AWAITING_VOICE_MODE_INPUT
@@ -976,14 +961,15 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     if query.data == "brod_confirm_no":
-        await query.edit_message_text("Broadcast cancelled."); return await admin_panel(update, context)
+        await query.edit_message_text("Broadcast cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]))
+        return ADMIN_MAIN
     
     await query.edit_message_text("📢 Sending broadcast...")
     user_files = os.listdir(USERS_DIR)
     success_count, fail_count = 0, 0
     text = context.user_data.pop('broadcast_message_text', None)
     if not text:
-        await query.edit_message_text("Error: Broadcast message not found."); return await admin_panel(update, context)
+        await query.edit_message_text("Error: Broadcast message not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]])); return ADMIN_MAIN
     
     for filename in user_files:
         user_id = int(filename.split('.')[0])
@@ -1098,7 +1084,6 @@ def main() -> None:
     application.add_handler(CommandHandler(["me", "mycredits"], profile_handler))
     application.add_handler(CommandHandler("redeem", redeem_command))
 
-    application.add_handler(CallbackQueryHandler(regenerate_chat_handler, pattern="^regen_chat"))
     application.add_handler(MessageHandler(filters.Document.ALL, document_handler))
     
     application.add_error_handler(error_handler)
