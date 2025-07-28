@@ -1260,17 +1260,27 @@ async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return USER_MAIN
 
 async def redeem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text("Usage: `/redeem YOUR-CODE`"); return
+    if not context.args:
+        await update.message.reply_text("Usage: `/redeem YOUR-CODE`")
+        return
+
     code_to_redeem, user_id, codes = context.args, update.effective_user.id, load_redeem_codes()
+
+    # Fix: handle list input
+    if isinstance(code_to_redeem, list):
+        code_to_redeem = code_to_redeem[0]  # get the first item if it's a list
+
     if code_to_redeem in codes and codes[code_to_redeem]["is_active"]:
-        credits_to_add, user_data = codes[code_to_redeem]["credits"], load_user_data(user_id)
+        credits_to_add = codes[code_to_redeem]["credits"]
+        user_data = load_user_data(user_id)
         user_data["credits"] += credits_to_add
         codes[code_to_redeem]["is_active"] = False
         codes[code_to_redeem]["redeemed_by"] = user_id
         save_user_data(user_id, user_data)
         save_redeem_codes(codes)
         await update.message.reply_markdown_v2(f"🎉 Success\\! *{credits_to_add}* credits added\\. New balance: *{user_data['credits']}*\\.")
-    else: await update.message.reply_text("❌ This code is invalid or has already been used.")
+    else:
+        await update.message.reply_text("❌ This code is invalid or has already been used.")
 
 async def document_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -1641,91 +1651,147 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
     return ADMIN_MAIN
 
 async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    command = (update.message.text.split() + [None])
-    if not command: return
-    command = command.lower()
+    if not is_admin(update.effective_user.id): 
+        return
+
+    def escape_markdown(text):
+        # Escape all special MarkdownV2 characters
+        escape_chars = r'_*[]()~`>#+-=|{}.!'
+        return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+
+    parts = update.message.text.split()
+    if not parts:
+        return
+    command = parts[0].lstrip('/').lower()
+
     if command == "msg":
-        try:
-            target_user_id = int(context.args)
-            message_text = " ".join(context.args[1:])
-            if not message_text: raise IndexError
-            await context.bot.send_message(chat_id=target_user_id, text=f"✉️ A message from the admin:\n\n{message_text}")
-            await update.message.reply_markdown_v2(f"✅ Message sent to user `{target_user_id}`.")
-        except (IndexError, ValueError):
+        if len(context.args) < 2:
             await update.message.reply_text("Usage: `/msg <user_id> <message>`")
-    elif command == "cred":
+            return
         try:
-            target_user_id, amount = int(context.args), int(context.args)
+            target_user_id = int(context.args[0])
+            message_text = " ".join(context.args[1:])
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"✉️ A message from the admin:\n\n{message_text}"
+            )
+            await update.message.reply_text(
+                f"✅ Message sent to user {target_user_id}.",
+                parse_mode=None
+            )
+        except ValueError:
+            await update.message.reply_text("Invalid user ID format. Usage: `/msg <user_id> <message>`")
+
+    elif command == "cred":
+        if len(context.args) < 2:
+            await update.message.reply_text("Usage: `/cred <user_id> <amount>`")
+            return
+        try:
+            target_user_id = int(context.args[0])
+            amount = int(context.args[1])
             user_data = load_user_data(target_user_id)
             user_data['credits'] += amount
             save_user_data(target_user_id, user_data)
             operation = "Gave" if amount >= 0 else "Deducted"
-            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
-        except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/cred <user_id> <amount>` (use negative for deduction)")
+            await update.message.reply_text(
+                f"{operation} {abs(amount)} credits to/from user {target_user_id}. New balance: {user_data['credits']}.",
+                parse_mode=None
+            )
+        except ValueError:
+            await update.message.reply_text("Invalid format. Usage: `/cred <user_id> <amount>` (use negative for deduction)")
+
     elif command in ["watch", "unwatch"]:
+        if not context.args:
+            await update.message.reply_text(f"Usage: `/{command} <user_id>`")
+            return
         try:
-            target_user_id = int(context.args)
+            target_user_id = int(context.args[0])
             if command == "watch":
                 _watched_users.add(target_user_id)
-                await update.message.reply_markdown_v2(f"👀 Now watching user `{target_user_id}`. All their interactions will be forwarded here.")
+                await update.message.reply_text(
+                    escape_markdown(f"👀 Now watching user `{target_user_id}`. All their interactions will be forwarded here."),
+                    parse_mode='MarkdownV2'
+                )
             else:
                 _watched_users.discard(target_user_id)
-                await update.message.reply_markdown_v2(f"✅ Stopped watching user `{target_user_id}`.")
+                await update.message.reply_text(
+                    escape_markdown(f"✅ Stopped watching user `{target_user_id}`."),
+                    parse_mode='MarkdownV2'
+                )
             save_watched_users()
-        except (IndexError, ValueError):
-            await update.message.reply_text(f"Usage: `/{command} <user_id>`")
+        except ValueError:
+            await update.message.reply_text(f"Invalid user ID. Usage: `/{command} <user_id>`")
+
     elif command == "listwatched":
         if not _watched_users:
             await update.message.reply_text("No users are currently being watched.")
         else:
-            text = "*👀 Watched Users:*\n" + "\n".join([f"`{uid}`" for uid in _watched_users])
-            await update.message.reply_markdown_v2(text)
+            text = "*👀 Watched Users:*\n" + "\n".join([f"`{escape_markdown(str(uid))}`" for uid in _watched_users])
+            await update.message.reply_text(
+                escape_markdown(text),
+                parse_mode='MarkdownV2'
+            )
+
     elif command == "getdata":
+        if not context.args:
+            await update.message.reply_text("Usage: `/getdata <user_id>`")
+            return
         try:
-            target_user_id = int(context.args)
+            target_user_id = int(context.args[0])
             user_file = os.path.join(USERS_DIR, f"{target_user_id}.json")
             if os.path.exists(user_file):
                 with open(user_file, 'rb') as f:
                     await update.message.reply_document(document=f)
             else:
-                await update.message.reply_markdown_v2(f"No data file found for user `{target_user_id}`.")
-        except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/getdata <user_id>`")
+                await update.message.reply_text(
+                    escape_markdown(f"No data file found for user `{target_user_id}`."),
+                    parse_mode='MarkdownV2'
+                )
+        except ValueError:
+            await update.message.reply_text("Invalid user ID. Usage: `/getdata <user_id>`")
+
     elif command == "gethistory":
+        if not context.args:
+            await update.message.reply_text("Usage: `/gethistory <user_id>`")
+            return
         try:
-            target_user_id = int(context.args)
+            target_user_id = int(context.args[0])
             user_data = load_user_data(target_user_id)
             chat_history = user_data.get('chat_history', [])
             voice_history = user_data.get('voice_chat_history', [])
             if not chat_history and not voice_history:
-                await update.message.reply_text(f"No saved history found for user `{target_user_id}`.")
+                await update.message.reply_text(
+                    escape_markdown(f"No saved history found for user `{target_user_id}`."),
+                    parse_mode='MarkdownV2'
+                )
                 return
+            
             history_text = f"--- Chat History for {target_user_id} ---\n\n"
             if chat_history:
                 history_text += "--- Text Chat ---\n"
                 for msg in chat_history:
-                    history_text += f"[{msg['role'].upper()}]: {msg['content']}\n"
+                    history_text += f"[{msg['role'].upper()}]: {escape_markdown(msg['content'])}\n"
             if voice_history:
                 history_text += "\n--- Voice Chat ---\n"
                 for msg in voice_history:
-                    history_text += f"[{msg['role'].upper()}]: {msg['content']}\n"
+                    history_text += f"[{msg['role'].upper()}]: {escape_markdown(msg['content'])}\n"
+            
             history_file_path = os.path.join(TEMP_DIR, f"history_{target_user_id}.txt")
             with open(history_file_path, "w", encoding="utf-8") as f:
                 f.write(history_text)
             with open(history_file_path, "rb") as f:
                 await update.message.reply_document(document=f)
             os.remove(history_file_path)
-        except (IndexError, ValueError):
-            await update.message.reply_text("Usage: `/gethistory <user_id>`")
+        except ValueError:
+            await update.message.reply_text("Invalid user ID. Usage: `/gethistory <user_id>`")
+
     elif command == "globalstats":
         total_credits = 0
         total_stats = {k: 0 for k in LOADING_MESSAGES.keys()}
         user_files = [f for f in os.listdir(USERS_DIR) if f.endswith('.json')]
         user_activity = {}
         for user_file in user_files:
-            user_id_str = user_file.split('.')
+            user_id_str = user_file.split('.')[0]
             try:
                 with open(os.path.join(USERS_DIR, user_file), 'r') as f:
                     data = json.load(f)
@@ -1739,22 +1805,30 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     user_activity[user_id_str] = activity_count
             except (json.JSONDecodeError, ValueError):
                 continue
-        sorted_users = sorted(user_activity.items(), key=lambda item: item, reverse=True)
+        
+        sorted_users = sorted(user_activity.items(), key=lambda item: item[1], reverse=True)
         top_5_users = sorted_users[:5]
+        
         text = (f"🌐 *Global Bot Statistics*\n\n"
                 f"💰 *Total Credits in Circulation:* `{total_credits}`\n\n"
                 f"📊 *Aggregate Tool Usage:*\n")
-        sorted_stats = sorted(total_stats.items(), key=lambda item: item, reverse=True)
+        
+        sorted_stats = sorted(total_stats.items(), key=lambda item: item[1], reverse=True)
         for key, value in sorted_stats:
             if value > 0:
                 text += f"  •  `{key.title()}`: {value}\n"
+        
         text += "\n🏆 *Top 5 Most Active Users:*\n"
         if top_5_users:
-            for i, (user_id, count) in enumerate(top_5_users):
-                text += f"{i+1}\\. `{user_id}` \\({count} actions\\)\n"
+            for i, (user_id, count) in enumerate(top_5_users, 1):
+                text += f"{i}. `{escape_markdown(user_id)}` \\({count} actions\\)\n"
         else:
-            text += "_No user activity recorded yet\\._"
-        await update.message.reply_markdown_v2(text)
+            text += "_No user activity recorded yet._"
+        
+        await update.message.reply_text(
+            escape_markdown(text),
+            parse_mode='MarkdownV2'
+        )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
