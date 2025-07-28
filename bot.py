@@ -11,7 +11,7 @@ from collections import deque
 from datetime import date, datetime
 import asyncio
 from typing import Deque
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, error, Message
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, error, Message, InputMediaAnimation
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler,
     filters, ContextTypes, ConversationHandler
@@ -65,7 +65,10 @@ MODELS = {
     "video": ["provider-6/wan-2.1"],
     "tts": ["provider-3/tts-1"],
     "transcription": ["provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en"],
-    "summarize": ["provider-1/sonar"]
+    "summarize": ["provider-1/sonar"],
+    "coding": ["provider-3/qwen-2.5-coder-32b", "provider-6/qwen3-coder-480b-a35b", "provider-2/codestral", "provider-6/gemini-2.5-flash-thinking"],
+    "research": ["provider-3/gpt-4o-mini-search-preview", "provider-1/sonar-deep-research", "provider-1/sonar-reasoning-pro"],
+    "advanced_image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/sana-1.5"]
 }
 MODELS_PER_PAGE = 5
 TTS_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
@@ -83,7 +86,7 @@ VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": 
 LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio...", "summarize": "📚 Summarizing the document..."}
 REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
-(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT) = range(22)
+(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT, AWAITING_MULTI_MODEL_PROMPT, AWAITING_CODE_PROMPT, AWAITING_DOCUMENT_ANALYSIS, AWAITING_RESEARCH_QUERY, AWAITING_ADVANCED_IMAGE_PROMPT) = range(26)
 
 _active_api_keys, _settings, _watched_users = [], {}, set()
 
@@ -315,6 +318,24 @@ async def handle_api_error_with_retry_and_refund(user_id: int, error: Exception,
 def escape_markdown_v2(text: str) -> str:
     return re.sub(f'([{re.escape(r"_*[]()~`>#+-=|{}.!")}])', r'\\\1', text)
 
+async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
+    """Safely edit a message, handling both text and media messages."""
+    try:
+        await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except error.BadRequest:
+        # If the current message is a media message, send a new text message
+        await query.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+        await query.message.delete()
+
+async def safe_edit_message_for_message(message, text, reply_markup=None, parse_mode=None):
+    """Safely edit a message when we have a Message object instead of CallbackQuery."""
+    try:
+        await message.edit_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+    except error.BadRequest:
+        # If the current message is a media message, send a new text message
+        await message.reply_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+        await message.delete()
+
 async def cleanup_files(*files):
     for file_path in files:
         if file_path and os.path.exists(file_path):
@@ -414,8 +435,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         [InlineKeyboardButton("🎙️ TTS", callback_data="act_tts"), InlineKeyboardButton("✍️ Transcription", callback_data="act_transcription")],
         [InlineKeyboardButton("🎤 Voice Mode", callback_data="act_voice_mode"), InlineKeyboardButton("✨ Voice Mode Pro", callback_data="act_voice_mode_pro")],
         [InlineKeyboardButton("🎨 Image Mixer", callback_data="act_mixer"), InlineKeyboardButton("🌐 Web Pilot", callback_data="act_web")],
-        [InlineKeyboardButton("👤 My Profile", callback_data="act_me"), InlineKeyboardButton("🎭 Set Personality", callback_data="act_personality")],
-        [InlineKeyboardButton("❓ Help & Info", callback_data="act_help")]
+        [InlineKeyboardButton("🚀 Multi-Model AI", callback_data="act_multi_model"), InlineKeyboardButton("💻 Code Assistant", callback_data="act_coding")],
+        [InlineKeyboardButton("📄 Document Analyzer", callback_data="act_document"), InlineKeyboardButton("🔍 Research Assistant", callback_data="act_research")],
+        [InlineKeyboardButton("🎨 Advanced Image", callback_data="act_advanced_image"), InlineKeyboardButton("👤 My Profile", callback_data="act_me")],
+        [InlineKeyboardButton("🎭 Set Personality", callback_data="act_personality"), InlineKeyboardButton("❓ Help & Info", callback_data="act_help")]
     ]
     if is_admin(user.id):
         keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="act_admin")])
@@ -427,11 +450,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         welcome_text += f"\n\n🎭 Current AI Personality: _{escape_markdown_v2(user_data['personality'])}_"
     welcome_text += "\n\n👇 Select a tool below to get started\\."
 
+    # GIF URL from the channel
+    gif_url = "https://t.me/sypnsai/3"
+    
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text=welcome_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        await update.callback_query.edit_message_media(
+            media=InputMediaAnimation(
+                media=gif_url,
+                caption=welcome_text,
+                parse_mode=ParseMode.MARKDOWN_V2
+            ),
+            reply_markup=reply_markup
+        )
     else:
-        await update.message.reply_markdown_v2(text=welcome_text, reply_markup=reply_markup)
+        await update.message.reply_animation(
+            animation=gif_url,
+            caption=welcome_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
     return USER_MAIN
 
 async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -589,9 +627,18 @@ async def voice_mode_pro_start_handler(update: Update, context: ContextTypes.DEF
     context.user_data['voice_mode_pro_context'] = {}
     keyboard = [[InlineKeyboardButton(v.capitalize(), callback_data=f"vm_pro_voice_{v}") for v in TTS_VOICES[:3]],
                 [InlineKeyboardButton(v.capitalize(), callback_data=f"vm_pro_voice_{v}") for v in TTS_VOICES[3:]]]
-    await query.edit_message_text("✨*Voice Mode Pro* activated\\. This advanced mode understands complex commands it can code, create images, videos and edit images Just instruct it via voice message\\.\n\n"
-                                  "You can send photos\\. I'll ask you how to edit them\\.\n\n"
-                                  "First, please choose a voice for our conversation\\.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+    
+    message_text = ("✨*Voice Mode Pro* activated\\. This advanced mode understands complex commands it can code, create images, videos and edit images Just instruct it via voice message\\.\n\n"
+                   "You can send photos\\. I'll ask you how to edit them\\.\n\n"
+                   "First, please choose a voice for our conversation\\.")
+    
+    try:
+        await query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+    except error.BadRequest:
+        # If the current message is a media message, send a new text message
+        await query.message.reply_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        await query.message.delete()
+    
     return AWAITING_VOICE_MODE_PRO_INPUT
 
 async def voice_mode_pro_voice_select_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -599,9 +646,17 @@ async def voice_mode_pro_voice_select_handler(update: Update, context: ContextTy
     await query.answer()
     voice = query.data.split('_')[-1]
     context.user_data['voice_mode_voice'] = voice
-    await query.edit_message_text(f"✅ Voice set to *{voice.capitalize()}*\\.\n\n"
-                                  "You can now send me voice messages or photos\\. To stop, use the /exit command\\.",
-                                  parse_mode=ParseMode.MARKDOWN_V2)
+    
+    message_text = (f"✅ Voice set to *{voice.capitalize()}*\\.\n\n"
+                   "You can now send me voice messages or photos\\. To stop, use the /exit command\\.")
+    
+    try:
+        await query.edit_message_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+    except error.BadRequest:
+        # If the current message is a media message, send a new text message
+        await query.message.reply_text(message_text, parse_mode=ParseMode.MARKDOWN_V2)
+        await query.message.delete()
+    
     return AWAITING_VOICE_MODE_PRO_INPUT
 
 async def voice_mode_pro_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -871,20 +926,35 @@ async def action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if category == 'admin': return await admin_panel(update, context)
     if category == 'voice_mode':
         keyboard = [[InlineKeyboardButton(v.capitalize(), callback_data=f"vm_voice_{v}") for v in TTS_VOICES[:3]], [InlineKeyboardButton(v.capitalize(), callback_data=f"vm_voice_{v}") for v in TTS_VOICES[3:]]]
-        await query.edit_message_text("🗣️ First, choose a voice for our conversation.", reply_markup=InlineKeyboardMarkup(keyboard))
+        await safe_edit_message(query, "🗣️ First, choose a voice for our conversation.", reply_markup=InlineKeyboardMarkup(keyboard))
         return SELECTING_VOICE_FOR_MODE
     if category == 'mixer':
-        await query.edit_message_text("🎨 Welcome to the Image Mixer Studio!\n\nFirst, send me the primary concept or subject (e.g., 'a cat', 'a knight').")
+        await safe_edit_message(query, "🎨 Welcome to the Image Mixer Studio!\n\nFirst, send me the primary concept or subject (e.g., 'a cat', 'a knight').")
         return AWAITING_MIXER_CONCEPT_1
     if category == 'web':
-        await query.edit_message_text("🌐 Web Pilot Mode initiated. What would you like to know or which URL should I check?")
+        await safe_edit_message(query, "🌐 Web Pilot Mode initiated. What would you like to know or which URL should I check?")
         return AWAITING_WEB_PROMPT
+    if category == 'multi_model':
+        await safe_edit_message(query, "🚀 **Multi-Model AI Mode**\n\nThis advanced mode uses multiple AI models simultaneously for enhanced responses. Each model brings unique capabilities:\n\n• **GPT-4.1** - Reasoning & analysis\n• **Claude Sonar** - Deep research\n• **Gemini Flash** - Creative thinking\n\n💬 What would you like to explore with multiple AI models?")
+        return AWAITING_MULTI_MODEL_PROMPT
+    if category == 'coding':
+        await safe_edit_message(query, "💻 **AI Code Assistant**\n\nSpecialized coding tools with advanced models:\n\n• Code generation & debugging\n• Multiple programming languages\n• Code explanation & optimization\n• Project structure analysis\n\n💬 Describe your coding task or paste your code:")
+        return AWAITING_CODE_PROMPT
+    if category == 'document':
+        await safe_edit_message(query, "📄 **Document Analyzer**\n\nUpload any document (PDF, DOC, TXT) and I'll:\n\n• Extract key information\n• Summarize content\n• Analyze structure\n• Answer questions about it\n• Generate insights\n\n📎 Send me your document:")
+        return AWAITING_DOCUMENT_ANALYSIS
+    if category == 'research':
+        await safe_edit_message(query, "🔍 **AI Research Assistant**\n\nAdvanced research capabilities:\n\n• Web search & fact-checking\n• Academic paper analysis\n• Market research\n• Trend analysis\n• Data compilation\n\n🔍 What would you like to research?")
+        return AWAITING_RESEARCH_QUERY
+    if category == 'advanced_image':
+        await safe_edit_message(query, "🎨 **Advanced Image Generator**\n\nMulti-step image creation with:\n\n• Detailed prompt analysis\n• Style optimization\n• Quality enhancement\n• Multiple iterations\n• Professional results\n\n🎨 Describe your image in detail:")
+        return AWAITING_ADVANCED_IMAGE_PROMPT
     context.user_data['category'] = category
     last_model = context.user_data.get(f'last_model_{category}')
     if last_model:
         short_model_name = last_model.split('/')[-1]
         keyboard = [[InlineKeyboardButton(f"🚀 Use Last: {short_model_name}", callback_data=f"mr_{category}")], [InlineKeyboardButton("📋 Choose Another Model", callback_data=f"mc_{category}")]]
-        await query.edit_message_text(f"You previously used `{escape_markdown_v2(short_model_name)}`\\. Use it again?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, f"You previously used `{escape_markdown_v2(short_model_name)}`\\. Use it again?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         return SELECTING_MODEL
     return await show_model_selection(query, context)
 
@@ -894,7 +964,9 @@ async def show_model_selection(update_or_query, context: ContextTypes.DEFAULT_TY
     reply_markup = create_paginated_keyboard(model_list, category, page)
     text = f"💎 *Select a Model for {category.replace('_', ' ').title()}*"
     message = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
-    await message.edit_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    
+    await safe_edit_message_for_message(message, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    
     return SELECTING_MODEL
 
 async def model_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -924,50 +996,50 @@ async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_
             model_name = MODELS[category][int(model_index_str)]
         except (ValueError, IndexError) as e:
             logger.error(f"Error parsing model selection callback '{query.data}': {e}")
-            await query.edit_message_text("Sorry, there was an error. Please try again.")
+            await safe_edit_message(query, "Sorry, there was an error. Please try again.")
             return USER_MAIN
     if not category or not model_name:
-        await query.edit_message_text("Sorry, an error occurred. Returning to the main menu.")
+        await safe_edit_message(query, "Sorry, an error occurred. Returning to the main menu.")
         return await start_command(update, context)
     if context.user_data.get('voice_mode_setup'):
         context.user_data['voice_mode_model'] = model_name
         model_display_name = escape_markdown_v2(model_name.split('/')[-1])
         voice_display_name = context.user_data['voice_mode_voice'].capitalize()
-        await query.edit_message_text(f"🎤 Voice Mode Started with *{voice_display_name}* voice & *{model_display_name}* model\\.\n\nSend a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, f"🎤 Voice Mode Started with *{voice_display_name}* voice & *{model_display_name}* model\\.\n\nSend a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
         context.user_data.pop('voice_mode_setup')
         return AWAITING_VOICE_MODE_INPUT
     context.user_data.update({'model': model_name, f'last_model_{category}': model_name, 'category': category})
     msg_text = f"✅ Model Selected: `{escape_markdown_v2(model_name.split('/')[-1])}`\n\n"
     if category == "image":
-        await query.edit_message_text(msg_text + "📏 Now, choose an aspect ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"is_{size}") for name, size in IMAGE_SIZES.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, msg_text + "📏 Now, choose an aspect ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"is_{size}") for name, size in IMAGE_SIZES.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_IMAGE_SIZE
     if category == "video":
-        await query.edit_message_text(msg_text + "🎬 Now, choose a video ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"vr_{ratio}") for name, ratio in VIDEO_RATIOS.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, msg_text + "🎬 Now, choose a video ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"vr_{ratio}") for name, ratio in VIDEO_RATIOS.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_VIDEO_RATIO
     if category == "tts":
-        await query.edit_message_text(msg_text + "🗣️ Now, choose a voice\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[:3]], [InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[3:]]]), parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, msg_text + "🗣️ Now, choose a voice\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[:3]], [InlineKeyboardButton(v.capitalize(), callback_data=f"tv_{v}") for v in TTS_VOICES[3:]]]), parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_TTS_VOICE
     prompt_map = {"chat": "💬 What's on your mind?","transcription": "🎤 Send me a voice message or audio file.","image_edit": "🖼️ First, send the image you want to edit."}
     next_state_map = {"chat": AWAITING_PROMPT, "transcription": AWAITING_AUDIO, "image_edit": AWAITING_IMAGE_FOR_EDIT}
-    await query.edit_message_text(msg_text + escape_markdown_v2(prompt_map[category]), parse_mode=ParseMode.MARKDOWN_V2)
+    await safe_edit_message(query, msg_text + escape_markdown_v2(prompt_map[category]), parse_mode=ParseMode.MARKDOWN_V2)
     return next_state_map.get(category, USER_MAIN)
 
 async def image_size_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer()
     context.user_data['image_size'] = query.data.split('_', 1)[-1]
-    await query.edit_message_text("✅ Size selected.\n\n✍️ Now, what should I create?")
+    await safe_edit_message(query, "✅ Size selected.\n\n✍️ Now, what should I create?")
     return AWAITING_PROMPT
 
 async def video_ratio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer()
     context.user_data['video_ratio'] = query.data.split('_', 1)[-1]
-    await query.edit_message_text("✅ Ratio selected.\n\n✍️ Now, what's the scene? Describe the video.")
+    await safe_edit_message(query, "✅ Ratio selected.\n\n✍️ Now, what's the scene? Describe the video.")
     return AWAITING_PROMPT
 
 async def tts_voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query; await query.answer()
     context.user_data['tts_voice'] = query.data.split('_', 1)[-1]
-    await query.edit_message_text("✅ Voice selected.\n\n✍️ Now, send me the text you want me to say.")
+    await safe_edit_message(query, "✅ Voice selected.\n\n✍️ Now, send me the text you want me to say.")
     return AWAITING_TTS_INPUT
 
 async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_type: str):
@@ -1088,8 +1160,18 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                         final_message = await processing_message.edit_text(f"*Summary:*\n\n{escape_markdown_v2(result_text)}", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
                         await forward_to_admin_if_watched(final_message, context)
                 elif task_type in ['image', 'image_edit', 'video']:
-                     if not (data_list := json_data.get('data')) or not (media_url := data_list.get('url')):
-                         raise ValueError("API returned no media URL.")
+                     data_list = json_data.get('data')
+                     if not data_list:
+                         raise ValueError("API returned no data.")
+                     
+                     # Handle both list and dictionary formats
+                     if isinstance(data_list, list):
+                         if not data_list or not (media_url := data_list[0].get('url')):
+                             raise ValueError("API returned no media URL.")
+                     else:
+                         if not (media_url := data_list.get('url')):
+                             raise ValueError("API returned no media URL.")
+                     
                      caption = f"_{escape_markdown_v2(user_prompt)}_"
                      if task_type in ['image', 'image_edit']:
                          sent_message = await context.bot.send_photo(update.effective_chat.id, photo=media_url, caption=caption, parse_mode=ParseMode.MARKDOWN_V2)
@@ -1155,7 +1237,7 @@ async def voice_mode_start_handler(update: Update, context: ContextTypes.DEFAULT
     context.user_data['voice_mode_voice'] = voice
     keyboard = [[InlineKeyboardButton("🧠 Choose Model", callback_data="vm_choose_model")],
                 [InlineKeyboardButton("🚀 Use Default", callback_data="vm_use_default")]]
-    await query.edit_message_text("Next, choose your AI thinking model for this session, or use the default.", reply_markup=InlineKeyboardMarkup(keyboard))
+    await safe_edit_message(query, "Next, choose your AI thinking model for this session, or use the default.", reply_markup=InlineKeyboardMarkup(keyboard))
     return SELECTING_VOICE_MODEL_CHOICE
 
 async def voice_model_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1164,7 +1246,7 @@ async def voice_model_choice_handler(update: Update, context: ContextTypes.DEFAU
     choice = query.data.split('_')[-1]
     if choice == "default":
         context.user_data['voice_mode_model'] = DEFAULT_VOICE_MODE_MODEL
-        await query.edit_message_text(f"🎤 Voice Mode Started with *{context.user_data['voice_mode_voice'].capitalize()}* voice & default model\\.\n\nSend a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, f"🎤 Voice Mode Started with *{context.user_data['voice_mode_voice'].capitalize()}* voice & default model\\.\n\nSend a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_VOICE_MODE_INPUT
     else:
         context.user_data['voice_mode_setup'] = True
@@ -1453,7 +1535,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     ]
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(update.callback_query, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
     else:
         await update.message.reply_markdown_v2(text, reply_markup=InlineKeyboardMarkup(keyboard))
     return ADMIN_MAIN
@@ -1485,17 +1567,17 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
                 f"💻 *CPU:* {escape_markdown_v2(cpu_text)}\n"
                 f"🧠 *RAM:* {escape_markdown_v2(ram_text)}\n"
                 f"💽 *Disk:* {escape_markdown_v2(disk_text)}")
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        await safe_edit_message(query, text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
     elif action == "settings":
         text = "*⚙️ Bot Settings*\n\n"
         for key, value in _settings.items():
             text += f"`{key}`: `{value}`\n"
         text += "\nSend setting to change in `key value` format \\(e\\.g\\., `daily_credits 15`\\)\\."
         context.user_data['admin_action'] = 'change_setting'
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        await safe_edit_message(query, text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         return ADMIN_AWAITING_INPUT
     elif action == 'users':
-        await query.edit_message_text("Enter User ID to manage, or send `/all` to list users\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        await safe_edit_message(query, "Enter User ID to manage, or send `/all` to list users\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         context.user_data['admin_action'] = 'manage_user'
         return ADMIN_AWAITING_INPUT
     elif action == 'keys':
@@ -1507,19 +1589,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             text += f"`{i}:` {key_display} \\- {status}\n"
         text += "\nSend key index to toggle its status\\."
         context.user_data['admin_action'] = 'toggle_key'
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        await safe_edit_message(query, text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         return ADMIN_AWAITING_INPUT
     elif action == "broadcast":
-        await query.edit_message_text("Send the message to broadcast to all users\\.")
+        await safe_edit_message(query, "Send the message to broadcast to all users\\.")
         context.user_data['admin_action'] = 'broadcast'
         return ADMIN_AWAITING_INPUT
     elif action == "gen_codes":
-        await query.edit_message_text("Send details in `credits amount` format \\(e\\.g\\., `10 5` to generate 5 codes worth 10 credits each\\)\\.")
+        await safe_edit_message(query, "Send details in `credits amount` format \\(e\\.g\\., `10 5` to generate 5 codes worth 10 credits each\\)\\.")
         context.user_data['admin_action'] = 'gen_codes'
         return ADMIN_AWAITING_INPUT
     elif action == "errors":
         if not os.path.exists(ERROR_LOG_FILE) or os.path.getsize(ERROR_LOG_FILE) == 0:
-            await query.edit_message_text("No errors logged yet\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+            await safe_edit_message(query, "No errors logged yet\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         else:
             with open(ERROR_LOG_FILE, 'rb') as f:
                 await query.message.reply_document(document=f, filename="error_log.txt")
@@ -1527,7 +1609,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif action == "clear_errors":
         if os.path.exists(ERROR_LOG_FILE):
              open(ERROR_LOG_FILE, 'w').close()
-             await query.edit_message_text("✅ Error log cleared\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]))
+             await safe_edit_message(query, "✅ Error log cleared\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]))
     elif action == "back":
         return await admin_panel(update, context)
     return ADMIN_MAIN
@@ -1548,7 +1630,7 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(f"Invalid format. Use `key value`. Error: {e}")
     elif action == "manage_user":
         if text.lower() == '/all':
-             all_users = [f.split('.') for f in os.listdir(USERS_DIR)]
+             all_users = [f.split('.')[0] for f in os.listdir(USERS_DIR) if f.endswith('.json')]
              user_list = "\n".join([f"`{uid}`" for uid in all_users])
              await update.message.reply_markdown_v2(f"*All User IDs:*\n{user_list or 'No users found.'}")
         else:
@@ -1605,18 +1687,19 @@ async def admin_user_actions_handler(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     parts = query.data.split('_')
-    action, user_id_str = parts, parts
+    action = parts[1]  # admin_user_cred_123 -> cred
+    user_id_str = parts[3]  # admin_user_cred_123 -> 123
     target_user_id = int(user_id_str)
     if action == "cred":
         context.user_data['admin_action'] = f'add_credits_{target_user_id}'
-        await query.edit_message_text(f"How many credits to add/deduct from user `{target_user_id}`? (Use a negative number to deduct)", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, f"How many credits to add/deduct from user `{target_user_id}`? (Use a negative number to deduct)", parse_mode=ParseMode.MARKDOWN_V2)
         return ADMIN_AWAITING_INPUT
     elif action == "ban":
         user_data = load_user_data(target_user_id)
         user_data['banned'] = not user_data.get('banned', False)
         save_user_data(target_user_id, user_data)
         status = 'banned' if user_data['banned'] else 'unbanned'
-        await query.edit_message_text(f"✅ User `{target_user_id}` has been {status}.", parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, f"✅ User `{target_user_id}` has been {status}.", parse_mode=ParseMode.MARKDOWN_V2)
         try:
             await context.bot.send_message(chat_id=target_user_id, text=f"You have been {status} by an administrator.")
         except Exception as e:
@@ -1627,16 +1710,16 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     if query.data == "brod_confirm_no":
-        await query.edit_message_text("Broadcast cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]))
+        await safe_edit_message(query, "Broadcast cancelled.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]))
         return ADMIN_MAIN
-    await query.edit_message_text("📢 Sending broadcast...")
+    await safe_edit_message(query, "📢 Sending broadcast...")
     user_files = os.listdir(USERS_DIR)
     success_count, fail_count = 0, 0
     text = context.user_data.pop('broadcast_message_text', None)
     if not text:
-        await query.edit_message_text("Error: Broadcast message not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]])); return ADMIN_MAIN
+        await safe_edit_message(query, "Error: Broadcast message not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]])); return ADMIN_MAIN
     for filename in user_files:
-        user_id = int(filename.split('.'))
+        user_id = int(filename.split('.')[0])
         try:
             await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.MARKDOWN_V2)
             success_count += 1
@@ -1647,7 +1730,7 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
             logger.error(f"Error broadcasting to {user_id}: {e}")
             fail_count += 1
     final_text = f"Broadcast finished\\.\n✅ Sent: {success_count}\n❌ Failed: {fail_count}"
-    await query.edit_message_text(final_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
+    await safe_edit_message(query, final_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
     return ADMIN_MAIN
 
 async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
