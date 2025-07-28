@@ -35,6 +35,7 @@ INITIAL_A4F_KEYS = [
 ]
 A4F_API_BASE_URL = "https://api.a4f.co/v1"
 ADMIN_CHAT_ID = 7088711806
+DEFAULT_VOICE_MODE_MODEL = "provider-6/gpt-4.1"
 
 DATA_DIR = "data"
 USERS_DIR = os.path.join(DATA_DIR, "users")
@@ -48,7 +49,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus": 5, "maintenance": False}
+DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus": 10, "maintenance": False}
 
 MODELS = {
     "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
@@ -66,7 +67,7 @@ VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": 
 LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio...", "summarize": "📚 Summarizing the document..."}
 REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
-(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT) = range(20)
+(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE) = range(21)
 
 _active_api_keys, _settings, _watched_users = [], {}, set()
 
@@ -482,9 +483,11 @@ async def model_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     return await show_model_selection(query, context)
 
 async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query; await query.answer()
+    query = update.callback_query
+    await query.answer()
     prefix, data = query.data.split('_', 1)
     model_name, category = None, None
+    
     if prefix == 'mr':
         category = data
         model_name = context.user_data.get(f'last_model_{category}')
@@ -494,9 +497,21 @@ async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_
             model_name = MODELS[category][int(model_index_str)]
         except (ValueError, IndexError) as e:
             logger.error(f"Error parsing model selection callback '{query.data}': {e}")
-            await query.edit_message_text("Sorry, there was an error. Please try again."); return USER_MAIN
+            await query.edit_message_text("Sorry, there was an error. Please try again.")
+            return USER_MAIN
+
     if not category or not model_name:
-        await query.edit_message_text("Sorry, an error occurred. Returning to the main menu."); return await start_command(update, context)
+        await query.edit_message_text("Sorry, an error occurred. Returning to the main menu.")
+        return await start_command(update, context)
+
+    if context.user_data.get('voice_mode_setup'):
+        context.user_data['voice_mode_model'] = model_name
+        model_display_name = escape_markdown_v2(model_name.split('/')[-1])
+        voice_display_name = context.user_data['voice_mode_voice'].capitalize()
+        await query.edit_message_text(f"🎤 Voice Mode Started with *{voice_display_name}* voice & *{model_display_name}* model\\.\n\nSend a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        context.user_data.pop('voice_mode_setup')
+        return AWAITING_VOICE_MODE_INPUT
+
     context.user_data.update({'model': model_name, f'last_model_{category}': model_name, 'category': category})
     msg_text = f"✅ Model Selected: `{escape_markdown_v2(model_name.split('/')[-1])}`\n\n"
     
@@ -732,14 +747,34 @@ async def voice_mode_start_handler(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
     voice = query.data.split('_')[-1]
     context.user_data['voice_mode_voice'] = voice
-    context.user_data['voice_chat_history'] = deque(maxlen=100)
-    context.user_data['voice_chat_history'].append({"role": "system", "content": "You are a voice assistant. Your responses must be concise, suitable for voice conversion, and contain no Markdown, code blocks, lists, or special characters. Respond only with plain, spoken-word text."})
-    await query.edit_message_text(f"🎤 Voice Mode Started with *{voice.capitalize()}* voice\\. Each voice message costs 1 credit\\.\n\nSend me a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
-    return AWAITING_VOICE_MODE_INPUT
+    
+    keyboard = [[InlineKeyboardButton("🧠 Choose Model", callback_data="vm_choose_model")],
+                [InlineKeyboardButton("🚀 Use Default", callback_data="vm_use_default")]]
+    await query.edit_message_text("Next, choose your AI thinking model for this session, or use the default.", reply_markup=InlineKeyboardMarkup(keyboard))
+    return SELECTING_VOICE_MODEL_CHOICE
+
+async def voice_model_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    choice = query.data.split('_')[-1]
+    
+    if choice == "default":
+        context.user_data['voice_mode_model'] = DEFAULT_VOICE_MODE_MODEL
+        await query.edit_message_text(f"🎤 Voice Mode Started with *{context.user_data['voice_mode_voice'].capitalize()}* voice & default model\\.\n\nSend a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return AWAITING_VOICE_MODE_INPUT
+    else: # "choose"
+        context.user_data['voice_mode_setup'] = True
+        context.user_data['category'] = 'chat'
+        return await show_model_selection(query, context)
 
 async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     await forward_to_admin_if_watched(update.message, context)
+    
+    if 'voice_chat_history' not in context.user_data:
+        context.user_data['voice_chat_history'] = deque(maxlen=100)
+        context.user_data['voice_chat_history'].append({"role": "system", "content": "You are a voice assistant. Your responses must be concise, suitable for voice conversion, and contain no Markdown, code blocks, lists, or special characters. Respond only with plain, spoken-word text."})
+
     if not check_and_use_credit(user_id):
         await update.message.reply_text("🚫 You're out of credits! Use /redeem or refer a friend. Voice mode stopped.")
         for key in ['voice_mode_voice', 'voice_chat_history']: context.user_data.pop(key, None)
@@ -772,7 +807,7 @@ async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT
                 context.user_data['voice_chat_history'].append({"role": "user", "content": transcribed_text})
                 
                 await processing_message.edit_text(f"🤔 Thinking...")
-                chat_data = {"model": 'provider-3/gpt-4o-mini-search-preview', "messages": list(context.user_data['voice_chat_history'])}
+                chat_data = {"model": context.user_data.get('voice_mode_model', DEFAULT_VOICE_MODE_MODEL), "messages": list(context.user_data['voice_chat_history'])}
                 headers["Content-Type"] = "application/json"
                 chat_response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=chat_data, timeout=1200)
                 chat_response.raise_for_status()
@@ -909,7 +944,7 @@ async def mixer_concept_2_handler(update: Update, context: ContextTypes.DEFAULT_
                     f"Merge these concepts: '{concept_1}' and '{concept_2}'"
                 )
                 
-                data = { "model": "provider-3/gpt-4o-mini-search-preview", "messages": [{"role": "user", "content": creative_brief}] }
+                data = { "model": "provider-6/gpt-4.1", "messages": [{"role": "user", "content": creative_brief}] }
                 response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
                 response.raise_for_status()
                 
@@ -1456,6 +1491,7 @@ def main() -> None:
                 CallbackQueryHandler(personality_choice_handler, pattern="^p_back")
             ],
             SELECTING_VOICE_FOR_MODE: [CallbackQueryHandler(voice_mode_start_handler, pattern="^vm_voice_")],
+            SELECTING_VOICE_MODEL_CHOICE: [CallbackQueryHandler(voice_model_choice_handler, pattern="^vm_")],
             AWAITING_VOICE_MODE_INPUT: [MessageHandler(filters.VOICE, voice_mode_input_handler)],
             AWAITING_MIXER_CONCEPT_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_1_handler)],
             AWAITING_MIXER_CONCEPT_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_2_handler)],
