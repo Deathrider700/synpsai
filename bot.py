@@ -589,8 +589,8 @@ async def voice_mode_pro_start_handler(update: Update, context: ContextTypes.DEF
     context.user_data['voice_mode_pro_context'] = {}
     keyboard = [[InlineKeyboardButton(v.capitalize(), callback_data=f"vm_pro_voice_{v}") for v in TTS_VOICES[:3]],
                 [InlineKeyboardButton(v.capitalize(), callback_data=f"vm_pro_voice_{v}") for v in TTS_VOICES[3:]]]
-    await query.edit_message_text("✨*Voice Mode Pro* activated\\. This advanced mode understands complex commands to chat, create, and edit, intelligently selecting the best AI for your request\\.\n\n"
-                                  "You can send voice messages or photos\\. For photos, I'll ask you how to edit them\\.\n\n"
+    await query.edit_message_text("✨*Voice Mode Pro* activated\\. This advanced mode understands complex commands it can code, create images, videos and edit images Just instruct it via voice message\\.\n\n"
+                                  "You can send photos\\. I'll ask you how to edit them\\.\n\n"
                                   "First, please choose a voice for our conversation\\.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
     return AWAITING_VOICE_MODE_PRO_INPUT
 
@@ -610,7 +610,7 @@ async def voice_mode_pro_input_handler(update: Update, context: ContextTypes.DEF
     if not context.user_data.get('voice_mode_pro_active'):
         await update.message.reply_text("Voice Mode Pro isn't active. Please start it from the main menu.")
         return await start_command(update, context)
-    # Voice Mode Pro costs 2 credits
+    
     if not use_multiple_credits(user_id, 2):
         await _speak(context, user_id, "You need at least 2 credits for Voice Mode Pro! Please redeem a code or wait for your daily refill.")
         return await cancel_handler(update, context)
