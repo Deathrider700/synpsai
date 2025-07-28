@@ -61,14 +61,12 @@ DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus":
 MODELS = {
     "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
     "image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-1/FLUX.1-schnell", "provider-6/FLUX.1-1-pro", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5-flash"],
-    "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-6/black-forest-labs-flux-1-kontext-max", "provider-3/flux-kontext-dev"],
+    "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-max", "provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
     "tts": ["provider-3/tts-1"],
     "transcription": ["provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en"],
     "summarize": ["provider-1/sonar"],
-    "coding": ["provider-3/qwen-2.5-coder-32b", "provider-6/qwen3-coder-480b-a35b", "provider-2/codestral", "provider-6/gemini-2.5-flash-thinking"],
-    "research": ["provider-3/gpt-4o-mini-search-preview", "provider-1/sonar-deep-research", "provider-1/sonar-reasoning-pro"],
-    "advanced_image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/sana-1.5"]
+
 }
 MODELS_PER_PAGE = 5
 TTS_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
@@ -86,7 +84,7 @@ VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": 
 LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio...", "summarize": "📚 Summarizing the document..."}
 REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
-(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT, AWAITING_MULTI_MODEL_PROMPT, AWAITING_CODE_PROMPT, AWAITING_DOCUMENT_ANALYSIS, AWAITING_RESEARCH_QUERY, AWAITING_ADVANCED_IMAGE_PROMPT) = range(26)
+(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT) = range(22)
 
 _active_api_keys, _settings, _watched_users = [], {}, set()
 
@@ -435,10 +433,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         [InlineKeyboardButton("🎙️ TTS", callback_data="act_tts"), InlineKeyboardButton("✍️ Transcription", callback_data="act_transcription")],
         [InlineKeyboardButton("🎤 Voice Mode", callback_data="act_voice_mode"), InlineKeyboardButton("✨ Voice Mode Pro", callback_data="act_voice_mode_pro")],
         [InlineKeyboardButton("🎨 Image Mixer", callback_data="act_mixer"), InlineKeyboardButton("🌐 Web Pilot", callback_data="act_web")],
-        [InlineKeyboardButton("🚀 Multi-Model AI", callback_data="act_multi_model"), InlineKeyboardButton("💻 Code Assistant", callback_data="act_coding")],
-        [InlineKeyboardButton("📄 Document Analyzer", callback_data="act_document"), InlineKeyboardButton("🔍 Research Assistant", callback_data="act_research")],
-        [InlineKeyboardButton("🎨 Advanced Image", callback_data="act_advanced_image"), InlineKeyboardButton("👤 My Profile", callback_data="act_me")],
-        [InlineKeyboardButton("🎭 Set Personality", callback_data="act_personality"), InlineKeyboardButton("❓ Help & Info", callback_data="act_help")]
+        [InlineKeyboardButton("👤 My Profile", callback_data="act_me"), InlineKeyboardButton("🎭 Set Personality", callback_data="act_personality")],
+        [InlineKeyboardButton("❓ Help & Info", callback_data="act_help")]
     ]
     if is_admin(user.id):
         keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="act_admin")])
@@ -509,7 +505,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
                  "`/personality` \\- Set a custom personality for the chat AI\\.\n"
                  f"`/redeem {escape_markdown_v2('<CODE>')}` \\- Redeem a code for credits\\.\n"
                  "`/help` \\- Show this help message\\.\n"
-                 "`/exit` \\- Stop the current mode \\(like Voice Mode\\)\\.")
+                 "`/exit` \\- Stop the current mode \\(like Voice Mode\\)\\.\n")
     if is_admin(query_or_message.from_user.id):
         help_text += ("\n\n*Admin Commands:*\n"
                       "`/admin` \\- Open the admin dashboard\\.\n"
@@ -934,21 +930,7 @@ async def action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if category == 'web':
         await safe_edit_message(query, "🌐 Web Pilot Mode initiated. What would you like to know or which URL should I check?")
         return AWAITING_WEB_PROMPT
-    if category == 'multi_model':
-        await safe_edit_message(query, "🚀 **Multi-Model AI Mode**\n\nThis advanced mode uses multiple AI models simultaneously for enhanced responses. Each model brings unique capabilities:\n\n• **GPT-4.1** - Reasoning & analysis\n• **Claude Sonar** - Deep research\n• **Gemini Flash** - Creative thinking\n\n💬 What would you like to explore with multiple AI models?")
-        return AWAITING_MULTI_MODEL_PROMPT
-    if category == 'coding':
-        await safe_edit_message(query, "💻 **AI Code Assistant**\n\nSpecialized coding tools with advanced models:\n\n• Code generation & debugging\n• Multiple programming languages\n• Code explanation & optimization\n• Project structure analysis\n\n💬 Describe your coding task or paste your code:")
-        return AWAITING_CODE_PROMPT
-    if category == 'document':
-        await safe_edit_message(query, "📄 **Document Analyzer**\n\nUpload any document (PDF, DOC, TXT) and I'll:\n\n• Extract key information\n• Summarize content\n• Analyze structure\n• Answer questions about it\n• Generate insights\n\n📎 Send me your document:")
-        return AWAITING_DOCUMENT_ANALYSIS
-    if category == 'research':
-        await safe_edit_message(query, "🔍 **AI Research Assistant**\n\nAdvanced research capabilities:\n\n• Web search & fact-checking\n• Academic paper analysis\n• Market research\n• Trend analysis\n• Data compilation\n\n🔍 What would you like to research?")
-        return AWAITING_RESEARCH_QUERY
-    if category == 'advanced_image':
-        await safe_edit_message(query, "🎨 **Advanced Image Generator**\n\nMulti-step image creation with:\n\n• Detailed prompt analysis\n• Style optimization\n• Quality enhancement\n• Multiple iterations\n• Professional results\n\n🎨 Describe your image in detail:")
-        return AWAITING_ADVANCED_IMAGE_PROMPT
+
     context.user_data['category'] = category
     last_model = context.user_data.get(f'last_model_{category}')
     if last_model:
@@ -963,9 +945,14 @@ async def show_model_selection(update_or_query, context: ContextTypes.DEFAULT_TY
     model_list = MODELS.get(category, [])
     reply_markup = create_paginated_keyboard(model_list, category, page)
     text = f"💎 *Select a Model for {category.replace('_', ' ').title()}*"
-    message = update_or_query.message if hasattr(update_or_query, 'message') else update_or_query
     
-    await safe_edit_message_for_message(message, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    # Check if it's a CallbackQuery or Message
+    if hasattr(update_or_query, 'message'):
+        # It's a CallbackQuery
+        await safe_edit_message(update_or_query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    else:
+        # It's a Message
+        await safe_edit_message_for_message(update_or_query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
     
     return SELECTING_MODEL
 
@@ -1991,6 +1978,7 @@ def main() -> None:
             AWAITING_MIXER_CONCEPT_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_1_handler)],
             AWAITING_MIXER_CONCEPT_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_2_handler)],
             AWAITING_WEB_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, web_pilot_handler)],
+
         },
         fallbacks=[CommandHandler("start", start_command), CommandHandler("cancel", cancel_handler), CommandHandler("exit", exit_command)],
         conversation_timeout=1800, name="main_conversation", persistent=False, allow_reentry=True
