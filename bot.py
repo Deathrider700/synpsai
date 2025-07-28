@@ -18,6 +18,7 @@ from telegram.ext import (
     filters, ContextTypes, ConversationHandler
 )
 from telegram.constants import ChatAction, ParseMode
+from telegram.request import HTTPXRequest
 
 TELEGRAM_BOT_TOKEN = "8385126802:AAEqYo6r3IyteSnPgLHUTpAaxdNU1SfHlB4"
 INITIAL_A4F_KEYS = [
@@ -65,7 +66,7 @@ VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": 
 LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio...", "summarize": "📚 Summarizing the document..."}
 REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
-(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, ADMIN_USERS_LIST, ADMIN_KEYS_LIST, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT) = range(22)
+(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT) = range(20)
 
 _active_api_keys, _settings, _watched_users = [], {}, set()
 
@@ -173,7 +174,7 @@ def refund_credit(user_id: int):
         logger.info(f"Refunded 1 credit to user {user_id}")
 
 def escape_markdown_v2(text: str) -> str:
-    return re.sub(f'([{re.escape(r"_*[]()~>#+-=|{}.!")}])', r'\\\1', text)
+    return re.sub(f'([{re.escape(r"_*[]()~`>#+-=|{}.!")}])', r'\\\1', text)
 
 async def cleanup_files(*files):
     for file_path in files:
@@ -204,6 +205,8 @@ def format_error_message(error_obj: Exception) -> str:
             else:
                 details = response.json()
                 return f"❌ *API Error ({status}):*\n{escape_markdown_v2(details.get('error', {}).get('message', 'No details from API.'))}"
+        elif isinstance(error_obj, httpx.ReadTimeout):
+            return f"❌ *Connection Timeout:* The request to the API timed out\\. Please try again\\."
         else:
             return f"❌ *Connection Error:*\n{escape_markdown_v2(str(error_obj))}"
     except Exception:
@@ -220,10 +223,10 @@ async def notify_admin_of_new_user(context: ContextTypes.DEFAULT_TYPE, user: Upd
     if not ADMIN_CHAT_ID: return
     base_text = (f"🎉 *New User Alert*\n\n"
                  f"*Name:* {escape_markdown_v2(user.full_name)}\n"
-                 f"*ID:* {user.id}\n"
+                 f"*ID:* `{user.id}`\n"
                  f"*Username:* {'@' + escape_markdown_v2(user.username) if user.username else 'N/A'}")
     if referred_by:
-        base_text += f"\n*Referred By:* {referred_by}"
+        base_text += f"\n*Referred By:* `{referred_by}`"
     try: await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=base_text, parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e: logger.error(f"Failed to send new user notification to admin: {e}")
 
@@ -293,7 +296,7 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id = query_or_message.from_user.id
     user_data = load_user_data(user_id)
     stats = user_data.get('stats', {})
-    stats_text = "\n".join([f"  •  {k.title()}: {v}" for k, v in stats.items() if v > 0]) or "_No activity yet\\._"
+    stats_text = "\n".join([f"  •  `{k.title()}`: {v}" for k, v in stats.items() if v > 0]) or "_No activity yet\\._"
     
     credits = "♾️ Unlimited (Admin)" if is_admin(user_id) else user_data.get('credits', 0)
     
@@ -302,9 +305,9 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     referral_link = f"https://t.me/{bot_username}?start={referral_code}"
 
     text = (f"👤 *My Profile*\n\n"
-            f"💰 *Credits:* {credits}\n"
-            f"📈 *Users Referred:* {user_data.get('referrals_made', 0)}\n\n"
-            f"🤝 *Your Referral Link:*\n{escape_markdown_v2(referral_link)}\n\n"
+            f"💰 *Credits:* `{credits}`\n"
+            f"📈 *Users Referred:* `{user_data.get('referrals_made', 0)}`\n\n"
+            f"🤝 *Your Referral Link:*\n`{escape_markdown_v2(referral_link)}`\n\n"
             f"📊 *Usage Statistics*\n{stats_text}\n\n"
             f"Share your link to earn *{_settings['referral_bonus']}* credits for each new user who joins\\! You can also use /redeem\\.")
             
@@ -319,24 +322,24 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query_or_message = update.callback_query or update.message
     help_text = ("*❔ Help & Information*\n\n*Available Commands:*\n"
-                 "/start \\- Return to the main menu\\.\n"
-                 "/newchat \\- Clear history for a fresh AI Chat\\.\n"
-                 "/me \\- Check your credits, referral code, and stats\\.\n"
-                 "/personality \\- Set a custom personality for the chat AI\\.\n"
-                 "/redeem <CODE> \\- Redeem a code for credits\\.\n"
-                 "/help \\- Show this help message\\.\n"
-                 "/exit \\- Stop the current mode \\(like Voice Mode\\)\\.")
+                 "`/start` \\- Return to the main menu\\.\n"
+                 "`/newchat` \\- Clear history for a fresh AI Chat\\.\n"
+                 "`/me` \\- Check your credits, referral code, and stats\\.\n"
+                 "`/personality` \\- Set a custom personality for the chat AI\\.\n"
+                 f"`/redeem {escape_markdown_v2('<CODE>')}` \\- Redeem a code for credits\\.\n"
+                 "`/help` \\- Show this help message\\.\n"
+                 "`/exit` \\- Stop the current mode \\(like Voice Mode\\)\\.")
     if is_admin(query_or_message.from_user.id):
         help_text += ("\n\n*Admin Commands:*\n"
-                      "/admin \\- Open the admin dashboard\\.\n"
-                      "/globalstats \\- View aggregate stats for all users\\.\n"
-                      "/msg <id> <msg> \\- Send a message to a user\\.\n"
-                      "/cred <id> <amt> \\- Give/deduct credits\\.\n"
-                      "/watch <id> \\- Forward a user's messages to you\\.\n"
-                      "/unwatch <id> \\- Stop watching a user\\.\n"
-                      "/listwatched \\- List all watched users\\.\n"
-                      "/gethistory <id> \\- Get a user's chat history\\.\n"
-                      "/getdata <id> \\- Get a user's data file\\.")
+                      "`/admin` \\- Open the admin dashboard\\.\n"
+                      "`/globalstats` \\- View aggregate stats for all users\\.\n"
+                      f"`/msg {escape_markdown_v2('<id> <msg>')}` \\- Send a message to a user\\.\n"
+                      f"`/cred {escape_markdown_v2('<id> <amt>')}` \\- Give/deduct credits\\.\n"
+                      f"`/watch {escape_markdown_v2('<id>')}` \\- Forward a user's messages to you\\.\n"
+                      f"`/unwatch {escape_markdown_v2('<id>')}` \\- Stop watching a user\\.\n"
+                      "`/listwatched` \\- List all watched users\\.\n"
+                      f"`/gethistory {escape_markdown_v2('<id>')}` \\- Get a user's chat history\\.\n"
+                      f"`/getdata {escape_markdown_v2('<id>')}` \\- Get a user's data file\\.")
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
     if update.callback_query:
@@ -353,8 +356,7 @@ async def new_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await cleanup_files(context.user_data.pop('image_edit_path', None), context.user_data.pop('temp_file_path', None))
     for key in ['voice_mode_voice', 'voice_chat_history', 'mixer_concept_1']: context.user_data.pop(key, None)
-    await update.message.reply_text("Action cancelled. Returning to the main menu.")
-    await start_command(update, context)
+    await update.message.reply_text("Action cancelled. You can start again with /start.")
     return ConversationHandler.END
 
 async def set_personality_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -452,7 +454,7 @@ async def action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if last_model:
         short_model_name = last_model.split('/')[-1]
         keyboard = [[InlineKeyboardButton(f"🚀 Use Last: {short_model_name}", callback_data=f"mr_{category}")], [InlineKeyboardButton("📋 Choose Another Model", callback_data=f"mc_{category}")]]
-        await query.edit_message_text(f"You previously used {escape_markdown_v2(short_model_name)}\\. Use it again?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
+        await query.edit_message_text(f"You previously used `{escape_markdown_v2(short_model_name)}`\\. Use it again?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN_V2)
         return SELECTING_MODEL
     return await show_model_selection(query, context)
 
@@ -496,7 +498,7 @@ async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_
     if not category or not model_name:
         await query.edit_message_text("Sorry, an error occurred. Returning to the main menu."); return await start_command(update, context)
     context.user_data.update({'model': model_name, f'last_model_{category}': model_name, 'category': category})
-    msg_text = f"✅ Model Selected: {escape_markdown_v2(model_name.split('/')[-1])}\n\n"
+    msg_text = f"✅ Model Selected: `{escape_markdown_v2(model_name.split('/')[-1])}`\n\n"
     
     if category == "image":
         await query.edit_message_text(msg_text + "📏 Now, choose an aspect ratio\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(name, callback_data=f"is_{size}") for name, size in IMAGE_SIZES.items()]]), parse_mode=ParseMode.MARKDOWN_V2)
@@ -558,7 +560,7 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     "model": "provider-1/sonar-reasoning-pro",
                     "messages": [{"role": "user", "content": f"Enhance this prompt for an AI generator, making it more descriptive and vivid: '{user_prompt}'"}]
                 }
-                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=reasoning_payload, timeout=120)
+                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=reasoning_payload, timeout=1200)
                 response.raise_for_status()
                 reasoned_prompt = response.json()['choices'][0]['message']['content']
                 if reasoned_prompt:
@@ -591,7 +593,7 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     user_data['chat_history'] = list(context.user_data['chat_history'])
                     save_user_data(user_id, user_data)
                     headers["Content-Type"] = "application/json"
-                    response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
+                    response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
 
                 elif task_type in ['image', 'video', 'image_edit']:
                     data = {"model": context.user_data['model'], "prompt": user_prompt}
@@ -627,14 +629,14 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     if task_type == 'summarize':
                          data = {"model": context.user_data.get('model', 'provider-1/sonar'), "messages": [{"role": "system", "content": "You are a summarizing expert. Summarize the following document concisely and effectively."}, {"role": "user", "content": user_prompt}]}
                          headers["Content-Type"] = "application/json"
-                         response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
+                         response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
                     else:
                         file_obj = await (message.voice or message.audio).get_file()
                         temp_filename = f"temp_{uuid.uuid4()}.ogg"
                         await file_obj.download_to_drive(temp_filename)
                         context.user_data['temp_file_path'] = temp_filename
                         with open(temp_filename, 'rb') as f:
-                            response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': context.user_data['model']}, timeout=120)
+                            response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': context.user_data['model']}, timeout=1200)
 
                 response.raise_for_status()
                 json_data = response.json() if task_type not in ['tts'] else None
@@ -688,10 +690,10 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                 if task_type == 'chat': return AWAITING_PROMPT
                 else: return USER_MAIN
 
-        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
+        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError, error.TimedOut) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
-                await processing_message.edit_text("⏳ Still thinking...")
+                await processing_message.edit_text("⏳ Hold on a sec!")
                 await asyncio.sleep(2)
                 continue
             else:
@@ -715,11 +717,15 @@ async def image_for_edit_handler(update: Update, context: ContextTypes.DEFAULT_T
     await forward_to_admin_if_watched(update.message, context)
     if not update.message.photo: await update.message.reply_text("That's not an image. Please send a photo."); return AWAITING_IMAGE_FOR_EDIT
     await update.message.reply_text("✅ Image received! Now, tell me how to edit it.")
-    photo_file = await update.message.photo[-1].get_file()
-    temp_filename = f"temp_{uuid.uuid4()}.jpg"
-    await photo_file.download_to_drive(temp_filename)
-    context.user_data['image_edit_path'] = temp_filename
-    return AWAITING_EDIT_PROMPT
+    try:
+        photo_file = await update.message.photo[-1].get_file()
+        temp_filename = f"temp_{uuid.uuid4()}.jpg"
+        await photo_file.download_to_drive(temp_filename)
+        context.user_data['image_edit_path'] = temp_filename
+        return AWAITING_EDIT_PROMPT
+    except error.TimedOut:
+        await update.message.reply_text("⏳ Telegram is taking a while to process the image. Please try sending it again.")
+        return AWAITING_IMAGE_FOR_EDIT
 
 async def voice_mode_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -727,7 +733,7 @@ async def voice_mode_start_handler(update: Update, context: ContextTypes.DEFAULT
     voice = query.data.split('_')[-1]
     context.user_data['voice_mode_voice'] = voice
     context.user_data['voice_chat_history'] = deque(maxlen=100)
-    context.user_data['voice_chat_history'].append({"role": "system", "content": "You are a voice assistant. Keep your responses concise and suitable for voice conversion."})
+    context.user_data['voice_chat_history'].append({"role": "system", "content": "You are a voice assistant. Your responses must be concise, suitable for voice conversion, and contain no Markdown, code blocks, lists, or special characters. Respond only with plain, spoken-word text."})
     await query.edit_message_text(f"🎤 Voice Mode Started with *{voice.capitalize()}* voice\\. Each voice message costs 1 credit\\.\n\nSend me a voice message to begin, or use /exit to stop\\.", parse_mode=ParseMode.MARKDOWN_V2)
     return AWAITING_VOICE_MODE_INPUT
 
@@ -758,7 +764,7 @@ async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT
                 await file_obj.download_to_drive(temp_filename)
                 
                 with open(temp_filename, 'rb') as f:
-                    transcription_response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': 'provider-6/distil-whisper-large-v3-en'}, timeout=120)
+                    transcription_response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': 'provider-6/distil-whisper-large-v3-en'}, timeout=1200)
                 transcription_response.raise_for_status()
                 transcribed_text = transcription_response.json().get('text')
                 if not transcribed_text: raise ValueError("Transcription failed or returned empty text.")
@@ -768,7 +774,7 @@ async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT
                 await processing_message.edit_text(f"🤔 Thinking...")
                 chat_data = {"model": 'provider-3/gpt-4o-mini-search-preview', "messages": list(context.user_data['voice_chat_history'])}
                 headers["Content-Type"] = "application/json"
-                chat_response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=chat_data, timeout=120)
+                chat_response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=chat_data, timeout=1200)
                 chat_response.raise_for_status()
                 
                 ai_response_text = chat_response.json().get('choices', [{}])[0].get('message', {}).get('content')
@@ -789,10 +795,10 @@ async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT
                 await processing_message.delete()
                 break
                 
-        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
+        except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError, error.TimedOut) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
-                await processing_message.edit_text("⏳ Still thinking...")
+                await processing_message.edit_text("⏳ Hold on a sec!")
                 await asyncio.sleep(2)
                 continue
             else:
@@ -812,14 +818,14 @@ async def voice_mode_input_handler(update: Update, context: ContextTypes.DEFAULT
     await cleanup_files(temp_filename)
     return AWAITING_VOICE_MODE_INPUT
 
-async def exit_voice_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     for key in ['voice_mode_voice', 'voice_chat_history']: context.user_data.pop(key, None)
-    await update.message.reply_text("🎤 Voice mode stopped. Returning to the main menu.")
+    await update.message.reply_text("✅ Mode exited. Returning to the main menu.")
     await start_command(update, context)
-    return ConversationHandler.END
+    return USER_MAIN
 
 async def redeem_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text("Usage: /redeem YOUR-CODE"); return
+    if not context.args: await update.message.reply_text("Usage: `/redeem YOUR-CODE`"); return
     code_to_redeem, user_id, codes = context.args[0], update.effective_user.id, load_redeem_codes()
     if code_to_redeem in codes and codes[code_to_redeem]["is_active"]:
         credits_to_add, user_data = codes[code_to_redeem]["credits"], load_user_data(user_id)
@@ -904,7 +910,7 @@ async def mixer_concept_2_handler(update: Update, context: ContextTypes.DEFAULT_
                 )
                 
                 data = { "model": "provider-3/gpt-4o-mini-search-preview", "messages": [{"role": "user", "content": creative_brief}] }
-                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
+                response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
                 response.raise_for_status()
                 
                 final_prompt = response.json()['choices'][0]['message']['content']
@@ -931,7 +937,7 @@ async def mixer_concept_2_handler(update: Update, context: ContextTypes.DEFAULT_
         except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
-                await processing_message.edit_text("⏳ Still thinking...")
+                await processing_message.edit_text("⏳ Hold on a sec!")
                 await asyncio.sleep(2)
                 continue
             else:
@@ -982,7 +988,7 @@ async def web_pilot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
-                await processing_message.edit_text("⏳ Still thinking...")
+                await processing_message.edit_text("⏳ Hold on a sec!")
                 await asyncio.sleep(2)
                 continue
             else:
@@ -999,8 +1005,9 @@ async def web_pilot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔️ This command is for administrators only.")
-        return ConversationHandler.END
+        if update.callback_query: await query.answer("⛔️ This is for administrators only.", show_alert=True)
+        else: await update.message.reply_text("⛔️ This command is for administrators only.")
+        return USER_MAIN
 
     text = f"⚙️ *Admin Dashboard*\n\nSelect an action to perform\\."
     maintenance_text = "✅ ON" if _settings.get('maintenance') else "❌ OFF"
@@ -1019,7 +1026,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_markdown_v2(text, reply_markup=InlineKeyboardMarkup(keyboard))
     return ADMIN_MAIN
 
-async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     action = query.data.split('_', 1)[1]
@@ -1044,24 +1051,25 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             cpu_text = ram_text = disk_text = "N/A (Permission Denied)"
 
         text = (f"📊 *Bot & System Statistics*\n\n"
-                f"*Users:* {total_users}\n"
-                f"*Active Redeem Codes:* {active_codes}\n\n"
+                f"*Users:* `{total_users}`\n"
+                f"*Active Redeem Codes:* `{active_codes}`\n\n"
                 f"💻 *CPU:* {escape_markdown_v2(cpu_text)}\n"
                 f"🧠 *RAM:* {escape_markdown_v2(ram_text)}\n"
                 f"💽 *Disk:* {escape_markdown_v2(disk_text)}")
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        return ADMIN_MAIN
 
     elif action == "settings":
         text = "*⚙️ Bot Settings*\n\n"
         for key, value in _settings.items():
-            text += f"{key}: {value}\n"
-        text += "\nSend setting to change in key value format \\(e\\.g\\., daily_credits 15\\)\\."
+            text += f"`{key}`: `{value}`\n"
+        text += "\nSend setting to change in `key value` format \\(e\\.g\\., `daily_credits 15`\\)\\."
         context.user_data['admin_action'] = 'change_setting'
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         return ADMIN_AWAITING_INPUT
         
     elif action == 'users':
-        await query.edit_message_text("Enter User ID to manage, or send /all to list users\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        await query.edit_message_text("Enter User ID to manage, or send `/all` to list users\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
         context.user_data['admin_action'] = 'manage_user'
         return ADMIN_AWAITING_INPUT
 
@@ -1071,7 +1079,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         for i, key_info in enumerate(keys_status):
             status = "✅ Active" if key_info.get('active', True) else "❌ Disabled"
             key_display = escape_markdown_v2(f"{key_info['key'][:12]}...{key_info['key'][-4:]}")
-            text += f"{i}: {key_display} \\- {status}\n"
+            text += f"`{i}:` {key_display} \\- {status}\n"
         text += "\nSend key index to toggle its status\\."
         context.user_data['admin_action'] = 'toggle_key'
         await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
@@ -1083,7 +1091,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         return ADMIN_AWAITING_INPUT
         
     elif action == "gen_codes":
-        await query.edit_message_text("Send details in credits amount format \\(e\\.g\\., 10 5 to generate 5 codes worth 10 credits each\\)\\.")
+        await query.edit_message_text("Send details in `credits amount` format \\(e\\.g\\., `10 5` to generate 5 codes worth 10 credits each\\)\\.")
         context.user_data['admin_action'] = 'gen_codes'
         return ADMIN_AWAITING_INPUT
         
@@ -1093,6 +1101,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             await query.message.reply_document(document=open(ERROR_LOG_FILE, 'rb'), filename="error_log.txt")
             await query.message.reply_text("Error log sent\\. Do you want to clear it?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Yes, clear", callback_data="admin_clear_errors"), InlineKeyboardButton("⬅️ Back", callback_data="admin_back")]]))
+        return ADMIN_MAIN
 
     elif action == "clear_errors":
         if os.path.exists(ERROR_LOG_FILE):
@@ -1106,9 +1115,26 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     return ADMIN_MAIN
 
 async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    action = context.user_data.pop('admin_action', None)
+    action = context.user_data.get('admin_action')
     text = update.message.text
+
+    if action and action.startswith('add_credits_'):
+        try:
+            target_user_id = int(action.split('_')[2])
+            amount = int(update.message.text)
+            user_data = load_user_data(target_user_id)
+            user_data['credits'] += amount
+            save_user_data(target_user_id, user_data)
+            operation = "Gave" if amount >= 0 else "Deducted"
+            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
+        except (IndexError, ValueError):
+            await update.message.reply_text("Invalid amount.")
+        context.user_data.pop('admin_action', None)
+        await admin_panel(update, context)
+        return ADMIN_MAIN
     
+    context.user_data.pop('admin_action', None)
+
     if action == "change_setting":
         try:
             key, value = text.split(maxsplit=1)
@@ -1117,24 +1143,24 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 _settings[key] = type(DEFAULT_SETTINGS[key])(value)
                 save_settings()
-                await update.message.reply_text(f"✅ Setting {key} updated to {_settings[key]}.")
+                await update.message.reply_text(f"✅ Setting `{key}` updated to `{_settings[key]}`.")
         except Exception as e:
-            await update.message.reply_text(f"Invalid format. Use key value. Error: {e}")
+            await update.message.reply_text(f"Invalid format. Use `key value`. Error: {e}")
 
     elif action == "manage_user":
         if text.lower() == '/all':
              all_users = [f.split('.')[0] for f in os.listdir(USERS_DIR)]
-             user_list = "\n".join([f"{uid}" for uid in all_users])
+             user_list = "\n".join([f"`{uid}`" for uid in all_users])
              await update.message.reply_markdown_v2(f"*All User IDs:*\n{user_list}")
         else:
             try:
                 target_user_id = int(text)
                 if not os.path.exists(os.path.join(USERS_DIR, f"{target_user_id}.json")):
-                    await update.message.reply_text(f"No data for user ID {target_user_id}."); return await admin_panel(update, context)
+                    await update.message.reply_text(f"No data for user ID `{target_user_id}`."); return await admin_panel(update, context)
                 
                 user_data = load_user_data(target_user_id)
-                info_text = (f"ℹ️ *User Info: {target_user_id}*\n\n"
-                             f"*Credits:* {user_data.get('credits', 'N/A')}\n*Last Login:* {user_data.get('last_login_date', 'N/A')}\n"
+                info_text = (f"ℹ️ *User Info: `{target_user_id}`*\n\n"
+                             f"*Credits:* `{user_data.get('credits', 'N/A')}`\n*Last Login:* `{user_data.get('last_login_date', 'N/A')}`\n"
                              f"*Personality:* _{escape_markdown_v2(user_data.get('personality') or 'Not set')}_\n*Banned:* {'Yes' if user_data.get('banned') else 'No'}")
                 
                 keyboard = [
@@ -1143,6 +1169,7 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     [InlineKeyboardButton("⬅️ Back to Admin", callback_data="admin_back")]
                 ]
                 await update.message.reply_markdown_v2(info_text, reply_markup=InlineKeyboardMarkup(keyboard))
+                return ADMIN_MAIN 
 
             except ValueError: await update.message.reply_text("Invalid User ID.")
             
@@ -1155,7 +1182,7 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 keys_status[key_index]['active'] = not keys_status[key_index].get('active', True)
                 save_api_keys(keys_status)
-                await update.message.reply_text(f"✅ Key {key_index} has been {'enabled' if keys_status[key_index]['active'] else 'disabled'}.")
+                await update.message.reply_text(f"✅ Key `{key_index}` has been {'enabled' if keys_status[key_index]['active'] else 'disabled'}.")
         except ValueError: await update.message.reply_text("Invalid index.")
 
     elif action == "broadcast":
@@ -1172,10 +1199,10 @@ async def admin_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             for _ in range(amount):
                 full_code = f"SYPNS-{uuid.uuid4().hex[:12].upper()}-BOT"
                 codes[full_code] = {"credits": credits, "is_active": True}
-                new_codes_text.append(f"{escape_markdown_v2(full_code)}")
+                new_codes_text.append(f"`{escape_markdown_v2(full_code)}`")
             save_redeem_codes(codes)
             await update.message.reply_markdown_v2(f"✅ Generated *{amount}* codes worth *{credits}* credits:\n\n" + "\n".join(new_codes_text))
-        except ValueError: await update.message.reply_text("Invalid format. Use credits amount.")
+        except ValueError: await update.message.reply_text("Invalid format. Use `credits amount`.")
 
     await admin_panel(update, context)
     return ADMIN_MAIN
@@ -1188,7 +1215,7 @@ async def admin_user_actions_handler(update: Update, context: ContextTypes.DEFAU
     
     if action == "cred":
         context.user_data['admin_action'] = f'add_credits_{target_user_id}'
-        await query.edit_message_text(f"How many credits to add/deduct from user {target_user_id}? (Use a negative number to deduct)")
+        await query.edit_message_text(f"How many credits to add/deduct from user `{target_user_id}`? (Use a negative number to deduct)")
         return ADMIN_AWAITING_INPUT
         
     elif action == "ban":
@@ -1196,7 +1223,7 @@ async def admin_user_actions_handler(update: Update, context: ContextTypes.DEFAU
         user_data['banned'] = not user_data.get('banned', False)
         save_user_data(target_user_id, user_data)
         status = 'banned' if user_data['banned'] else 'unbanned'
-        await query.edit_message_text(f"✅ User {target_user_id} has been {status}.")
+        await query.edit_message_text(f"✅ User `{target_user_id}` has been {status}.")
         try:
             await context.bot.send_message(chat_id=target_user_id, text=f"You have been {status} by an administrator.")
         except Exception as e:
@@ -1235,24 +1262,6 @@ async def broadcast_confirm_handler(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text(final_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Admin Panel", callback_data="admin_back")]]), parse_mode=ParseMode.MARKDOWN_V2)
     return ADMIN_MAIN
 
-async def admin_add_credits_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    action = context.user_data.pop('admin_action', None)
-    if not action or not action.startswith('add_credits_'): return
-    
-    try:
-        target_user_id = int(action.split('_')[2])
-        amount = int(update.message.text)
-        user_data = load_user_data(target_user_id)
-        user_data['credits'] += amount
-        save_user_data(target_user_id, user_data)
-        operation = "Gave" if amount >= 0 else "Deducted"
-        await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user {target_user_id}\\. New balance: *{user_data['credits']}*\\.")
-    except (IndexError, ValueError):
-        await update.message.reply_text("Invalid amount.")
-        
-    await admin_panel(update, context)
-    return ADMIN_MAIN
-
 async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("⛔️ This command is for administrators only.")
@@ -1265,12 +1274,12 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             target_user_id = int(context.args[0])
             message_text = " ".join(context.args[1:])
             if not message_text:
-                await update.message.reply_text("Usage: /msg <user_id> <message>")
+                await update.message.reply_text("Usage: `/msg <user_id> <message>`")
                 return
             await context.bot.send_message(chat_id=target_user_id, text=f"✉️ A message from the admin:\n\n{message_text}")
-            await update.message.reply_text(f"✅ Message sent to user {target_user_id}.")
+            await update.message.reply_text(f"✅ Message sent to user `{target_user_id}`.")
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: /msg <user_id> <message>")
+            await update.message.reply_text("Usage: `/msg <user_id> <message>`")
     
     elif command == "cred":
         try:
@@ -1279,28 +1288,28 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             user_data['credits'] += amount
             save_user_data(target_user_id, user_data)
             operation = "Gave" if amount >= 0 else "Deducted"
-            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user {target_user_id}\\. New balance: *{user_data['credits']}*\\.")
+            await update.message.reply_markdown_v2(f"✅ {operation} *{abs(amount)}* credits to/from user `{target_user_id}`\\. New balance: *{user_data['credits']}*\\.")
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: /cred <user_id> <amount> (use negative for deduction)")
+            await update.message.reply_text("Usage: `/cred <user_id> <amount>` (use negative for deduction)")
 
     elif command in ["watch", "unwatch"]:
         try:
             target_user_id = int(context.args[0])
             if command == "watch":
                 _watched_users.add(target_user_id)
-                await update.message.reply_text(f"👀 Now watching user {target_user_id}. All their interactions will be forwarded here.")
+                await update.message.reply_text(f"👀 Now watching user `{target_user_id}`. All their interactions will be forwarded here.")
             else: # unwatch
                 _watched_users.discard(target_user_id)
-                await update.message.reply_text(f"✅ Stopped watching user {target_user_id}.")
+                await update.message.reply_text(f"✅ Stopped watching user `{target_user_id}`.")
             save_watched_users()
         except (IndexError, ValueError):
-            await update.message.reply_text(f"Usage: /{command} <user_id>")
+            await update.message.reply_text(f"Usage: `/{command} <user_id>`")
 
     elif command == "listwatched":
         if not _watched_users:
             await update.message.reply_text("No users are currently being watched.")
         else:
-            text = "*👀 Watched Users:*\n" + "\n".join([f"{uid}" for uid in _watched_users])
+            text = "*👀 Watched Users:*\n" + "\n".join([f"`{uid}`" for uid in _watched_users])
             await update.message.reply_markdown_v2(text)
             
     elif command == "getdata":
@@ -1310,9 +1319,9 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             if os.path.exists(user_file):
                 await update.message.reply_document(document=open(user_file, 'rb'))
             else:
-                await update.message.reply_text(f"No data file found for user {target_user_id}.")
+                await update.message.reply_text(f"No data file found for user `{target_user_id}`.")
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: /getdata <user_id>")
+            await update.message.reply_text("Usage: `/getdata <user_id>`")
 
     elif command == "gethistory":
         try:
@@ -1322,7 +1331,7 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             voice_history = user_data.get('voice_chat_history', [])
             
             if not chat_history and not voice_history:
-                await update.message.reply_text(f"No saved history found for user {target_user_id}.")
+                await update.message.reply_text(f"No saved history found for user `{target_user_id}`.")
                 return
 
             history_text = f"--- Chat History for {target_user_id} ---\n\n"
@@ -1344,7 +1353,7 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
             os.remove(history_file)
 
         except (IndexError, ValueError):
-            await update.message.reply_text("Usage: /gethistory <user_id>")
+            await update.message.reply_text("Usage: `/gethistory <user_id>`")
             
     elif command == "globalstats":
         total_credits = 0
@@ -1370,17 +1379,17 @@ async def admin_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         top_5_users = sorted_users[:5]
 
         text = (f"🌐 *Global Bot Statistics*\n\n"
-                f"💰 *Total Credits in Circulation:* {total_credits}\n\n"
+                f"💰 *Total Credits in Circulation:* `{total_credits}`\n\n"
                 f"📊 *Aggregate Tool Usage:*\n")
         
         for key, value in sorted(total_stats.items(), key=lambda item: item[1], reverse=True):
             if value > 0:
-                text += f"  •  {key.title()}: {value}\n"
+                text += f"  •  `{key.title()}`: {value}\n"
         
         text += "\n🏆 *Top 5 Most Active Users:*\n"
         if top_5_users:
             for i, (user_id, count) in enumerate(top_5_users):
-                text += f"{i+1}\\. {user_id} \\({count} actions\\)\n"
+                text += f"{i+1}\\. `{user_id}` \\({count} actions\\)\n"
         else:
             text += "_No user activity recorded yet\\._"
         
@@ -1401,11 +1410,13 @@ def main() -> None:
     if not INITIAL_A4F_KEYS: logger.critical("API KEYS not set!"); return
     if not ADMIN_CHAT_ID: logger.warning("ADMIN_CHAT_ID not set!");
     
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).build()
+    request = HTTPXRequest(read_timeout=60.0, write_timeout=60.0, connect_timeout=30.0, pool_timeout=60.0)
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).request(request).build()
     
-    user_conv_handler = ConversationHandler(
+    conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start_command),
+            CommandHandler("admin", admin_panel),
             CommandHandler("personality", personality_command_entry),
             CallbackQueryHandler(start_command, pattern="^main_menu$")
         ],
@@ -1414,6 +1425,15 @@ def main() -> None:
                 CallbackQueryHandler(action_handler, pattern="^act_"),
                 CallbackQueryHandler(start_command, pattern="^main_menu$")
             ],
+            ADMIN_MAIN: [
+                CallbackQueryHandler(admin_callback_handler, pattern="^admin_"),
+                CallbackQueryHandler(admin_user_actions_handler, pattern="^admin_user_"),
+            ],
+            ADMIN_AWAITING_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_input_handler),
+                CallbackQueryHandler(admin_callback_handler, pattern="^admin_back"),
+            ],
+            AWAITING_BROADCAST_CONFIRMATION: [CallbackQueryHandler(broadcast_confirm_handler, pattern="^brod_confirm_")],
             SELECTING_MODEL: [
                 CallbackQueryHandler(model_page_handler, pattern="^mp_"),
                 CallbackQueryHandler(model_selection_handler, pattern="^(mr|ms)_"),
@@ -1441,29 +1461,11 @@ def main() -> None:
             AWAITING_MIXER_CONCEPT_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_2_handler)],
             AWAITING_WEB_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, web_pilot_handler)],
         },
-        fallbacks=[CommandHandler("start", start_command), CommandHandler("cancel", cancel_handler), CommandHandler("exit", exit_voice_mode)],
-        conversation_timeout=1800, name="user_conversation", persistent=False, allow_reentry=True
+        fallbacks=[CommandHandler("start", start_command), CommandHandler("cancel", cancel_handler), CommandHandler("exit", exit_command)],
+        conversation_timeout=1800, name="main_conversation", persistent=False, allow_reentry=True
     )
     
-    admin_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("admin", admin_panel)],
-        states={
-            ADMIN_MAIN: [
-                CallbackQueryHandler(admin_callback_handler, pattern="^admin_"),
-                CallbackQueryHandler(admin_user_actions_handler, pattern="^admin_user_"),
-            ],
-            ADMIN_AWAITING_INPUT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_input_handler),
-                CallbackQueryHandler(admin_callback_handler, pattern="^admin_back"),
-            ],
-            AWAITING_BROADCAST_CONFIRMATION: [CallbackQueryHandler(broadcast_confirm_handler, pattern="^brod_confirm_")],
-        },
-        fallbacks=[CommandHandler("admin", admin_panel)],
-        conversation_timeout=600, name="admin_conversation", persistent=False, allow_reentry=True
-    )
-
-    application.add_handler(user_conv_handler)
-    application.add_handler(admin_conv_handler)
+    application.add_handler(conv_handler)
     
     application.add_handler(CommandHandler("help", help_handler))
     application.add_handler(CommandHandler("newchat", new_chat_command))
