@@ -21,12 +21,16 @@ from telegram.request import HTTPXRequest
 
 TELEGRAM_BOT_TOKEN = "8385126802:AAEqYo6r3IyteSnPgLHUTpAaxdNU1SfHlB4"
 INITIAL_A4F_KEYS = [
-    "ddc-a4f-14783cb2294142ebb17d4bbb0e55d88f", "ddc-a4f-3b6b2b21fd794959bb008593eba6b88b",
-    "ddc-a4f-d59bfe903deb4c3f9b0b724493e3d190", "ddc-a4f-3f75074b54f646cf87fda35032e4690d",
-    "ddc-a4f-ce49dddb591e4bf48589971994a57a74", "ddc-a4f-89e3e7a18a3e467d9ac2d9a38067ca3b",
-    "ddc-a4f-4e580ec612a94f98b1fe344edb812ab0", "ddc-a4f-03a8b8ae52a841e2af8b81c6f02f5e15",
-    "ddc-a4f-1f90259072ad4d5d9077d466f2df42ee", "ddc-a4f-003d19a80e85466ab58eca86eceabbf8",
-    "ddc-a4f-4c0658a7764c432c9aa8e4a6d409afb3"
+    "ddc-a4f-14783cb2294142ebb17d4bbb0e55d88f",
+    "ddc-a4f-3b6b2b21fd794959bb008593eba6b88b",
+    "ddc-a4f-d59bfe903deb4c3f9b0b724493e3d190",
+    "ddc-a4f-3f75074b54f646cf87fda35032e4690d",
+    "ddc-a4f-ce49dddb591e4bf48589971994a57a74",
+    "ddc-a4f-89e3e7a18a3e467d9ac2d9a38067ca3b",
+    "ddc-a4f-4e580ec612a94f98b1fe344edb812ab0",
+    "ddc-a4f-03a8b8ae52a841e2af8b81c6f02f5e15",
+    "ddc-a4f-1f90259072ad4d5d9077d466f2df42ee",
+    "ddc-a4f-003d19a80e85466ab58eca86eceabbf8"
 ]
 A4F_API_BASE_URL = "https://api.a4f.co/v1"
 ADMIN_CHAT_ID = 7088711806
@@ -59,14 +63,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus": 10, "maintenance": False}
 
 MODELS = {
-    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/gemini-2.5-pro", "provider-3/deepseek-v3", "provider-1/deepseek-v3-0324", "provider-1/sonar", "provider-1/sonar-deep-research", "provider-2/mistral-small", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-1/mistral-large", "provider-2/llama-4-scout", "provider-2/llama-4-maverick", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/gemma-3-12b-it", "provider-1/llama-3.3-70b-instruct-turbo", "provider-2/codestral", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-2/qwq-32b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-2/mistral-saba", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528", "provider-1/sonar-reasoning-pro", "provider-1/sonar-reasoning", "provider-1/sonar-pro", "provider-3/mistral-small-latest", "provider-3/magistral-medium-latest"],
+    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"],
     "image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-1/FLUX.1-schnell", "provider-6/FLUX.1-1-pro", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5-flash"],
     "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-max", "provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
     "tts": ["provider-3/tts-1"],
-    "transcription": ["provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en"],
-    "summarize": ["provider-1/sonar"],
-
+    "transcription": ["provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en"]
 }
 MODELS_PER_PAGE = 5
 TTS_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
@@ -81,7 +83,7 @@ PERSONALITY_PRESETS = {
 }
 IMAGE_SIZES = {"Square ⏹️": "1024x1024", "Wide  widescreen": "1792x1024", "Tall 📲": "1024x1792"}
 VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": "1:1"}
-LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio...", "summarize": "📚 Summarizing the document..."}
+LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio..."}
 REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
 (USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT) = range(22)
@@ -491,7 +493,7 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(update.callback_query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
     else:
         await update.message.reply_markdown_v2(text, reply_markup=reply_markup)
     return USER_MAIN
@@ -521,7 +523,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(help_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(update.callback_query, help_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
     else:
         await update.message.reply_markdown_v2(help_text, reply_markup=reply_markup)
     return USER_MAIN
@@ -557,17 +559,15 @@ async def _speak(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, vo
 async def _analyze_and_deliver(update: Update, context: ContextTypes.DEFAULT_TYPE, response_text: str):
     is_code = "```" in response_text
     is_list = any(line.strip().startswith(("- ", "* ", "1. ", "2. ")) for line in response_text.split('\n'))
-    is_long = len(response_text) > 400
+    is_long = len(response_text) > 4000  # Telegram message limit is ~4096 characters
+    is_complex = is_code or is_list or is_long
 
     voice = context.user_data.get('voice_mode_voice', 'onyx')
 
-    if is_code or is_list or is_long:
-        heads_up_text = "I have the answer for you. Because it contains code or is quite long, I'm sending it as a text message."
+    if is_complex:
+        heads_up_text = "I have the answer for you. Because it contains code or is quite long, I'm sending it as a file."
         await _speak(context, update.effective_chat.id, heads_up_text, voice)
-        try:
-            await update.message.reply_text(response_text, parse_mode=ParseMode.MARKDOWN)
-        except error.BadRequest:
-            await update.message.reply_text(response_text)
+        await _send_large_content_as_file(update, context, response_text, "voice_pro")
     else:
         await _speak(context, update.effective_chat.id, response_text, voice)
 
@@ -599,7 +599,7 @@ async def _get_pro_voice_intent(text: str) -> dict:
             api_key = get_random_api_key()
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             data = {"model": PRO_REASONING_MODEL, "messages": [{"role": "user", "content": cognitive_prompt}], "temperature": 0.1}
-            response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=120)
+            response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
             response.raise_for_status()
             json_response = response.json()
             choices = json_response.get('choices', [])
@@ -614,6 +614,136 @@ async def _get_pro_voice_intent(text: str) -> dict:
     except Exception as e:
         logger.error(f"Cognitive routing failed: {e}. Falling back to general chat.")
         return {"intent": "chat", "category": "general_chat", "model": PRO_MODEL_MAPPING["general_chat"], "prompt": text}
+
+async def _send_large_content_as_file(update: Update, context: ContextTypes.DEFAULT_TYPE, content: str, task_type: str = "chat"):
+    """
+    Send large content as a file with appropriate extension based on content type.
+    """
+    # Determine file extension based on content analysis
+    extension = ".txt"
+    filename = f"response_{uuid.uuid4().hex[:8]}"
+    
+    # Check for code blocks and determine language
+    code_blocks = re.findall(r'```(\w+)?\n(.*?)```', content, re.DOTALL)
+    if code_blocks:
+        # If there are code blocks, use the first language found
+        for lang, code in code_blocks:
+            if lang:
+                lang = lang.lower()
+                if lang in ['python', 'py']:
+                    extension = ".py"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['javascript', 'js']:
+                    extension = ".js"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['html']:
+                    extension = ".html"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['css']:
+                    extension = ".css"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['json']:
+                    extension = ".json"
+                    filename = f"data_{uuid.uuid4().hex[:8]}"
+                elif lang in ['xml']:
+                    extension = ".xml"
+                    filename = f"data_{uuid.uuid4().hex[:8]}"
+                elif lang in ['sql']:
+                    extension = ".sql"
+                    filename = f"query_{uuid.uuid4().hex[:8]}"
+                elif lang in ['bash', 'shell', 'sh']:
+                    extension = ".sh"
+                    filename = f"script_{uuid.uuid4().hex[:8]}"
+                elif lang in ['cpp', 'c++']:
+                    extension = ".cpp"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['c']:
+                    extension = ".c"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['java']:
+                    extension = ".java"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['php']:
+                    extension = ".php"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['ruby', 'rb']:
+                    extension = ".rb"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['go']:
+                    extension = ".go"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['rust']:
+                    extension = ".rs"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['swift']:
+                    extension = ".swift"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['kotlin', 'kt']:
+                    extension = ".kt"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['scala']:
+                    extension = ".scala"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['r']:
+                    extension = ".r"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['matlab']:
+                    extension = ".m"
+                    filename = f"code_{uuid.uuid4().hex[:8]}"
+                elif lang in ['yaml', 'yml']:
+                    extension = ".yml"
+                    filename = f"config_{uuid.uuid4().hex[:8]}"
+                elif lang in ['toml']:
+                    extension = ".toml"
+                    filename = f"config_{uuid.uuid4().hex[:8]}"
+                elif lang in ['ini', 'conf']:
+                    extension = ".ini"
+                    filename = f"config_{uuid.uuid4().hex[:8]}"
+                elif lang in ['markdown', 'md']:
+                    extension = ".md"
+                    filename = f"document_{uuid.uuid4().hex[:8]}"
+                break
+    
+    # Check for specific content patterns
+    if not code_blocks:
+        if re.search(r'#\s+', content, re.MULTILINE):  # Markdown headers
+            extension = ".md"
+            filename = f"document_{uuid.uuid4().hex[:8]}"
+        elif re.search(r'^\s*[-*+]\s+', content, re.MULTILINE):  # Lists
+            extension = ".md"
+            filename = f"document_{uuid.uuid4().hex[:8]}"
+        elif re.search(r'^\s*\d+\.\s+', content, re.MULTILINE):  # Numbered lists
+            extension = ".md"
+            filename = f"document_{uuid.uuid4().hex[:8]}"
+        elif len(content) > 4000:  # Very long text
+            extension = ".txt"
+            filename = f"text_{uuid.uuid4().hex[:8]}"
+    
+    # Create the file
+    file_path = os.path.join(TEMP_DIR, f"{filename}{extension}")
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        # Send the file
+        with open(file_path, 'rb') as f:
+            await context.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=f,
+                filename=f"{filename}{extension}",
+                caption=f"📄 Large response from {task_type.replace('_', ' ').title()}"
+            )
+        
+        # Clean up the file
+        os.remove(file_path)
+        
+    except Exception as e:
+        logger.error(f"Error sending file: {e}")
+        # Fallback to text message if file sending fails
+        try:
+            await update.effective_message.reply_text(content, parse_mode=ParseMode.MARKDOWN)
+        except error.BadRequest:
+            await update.effective_message.reply_text(content)
 
 async def voice_mode_pro_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -852,7 +982,8 @@ async def voice_mode_pro_photo_handler(update: Update, context: ContextTypes.DEF
 
 async def set_personality_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     buttons = [[InlineKeyboardButton("📝 Custom", callback_data="p_custom")]]
-    await update.callback_query.edit_message_text(
+    await safe_edit_message(
+        update.callback_query, 
         "🎭 How would you like to set the personality?",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
@@ -875,12 +1006,12 @@ async def personality_choice_handler(update: Update, context: ContextTypes.DEFAU
         text = "🎭 *Set Custom AI Personality*\n\n"
         if current_personality: text += f"Current personality: _{escape_markdown_v2(current_personality)}_\n\n"
         text += "Please send me the new personality prompt for the AI \\(e\\.g\\., 'You are a helpful pirate'\\)\\. To remove it, send /clear\\."
-        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+        await safe_edit_message(query, text, parse_mode=ParseMode.MARKDOWN_V2)
         return AWAITING_PERSONALITY
     elif choice == "presets":
         buttons = [[InlineKeyboardButton(name, callback_data=f"ps_{name}")] for name in PERSONALITY_PRESETS.keys()]
         buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="p_back")])
-        await query.edit_message_text("🎭 Choose a preset personality:", reply_markup=InlineKeyboardMarkup(buttons))
+        await safe_edit_message(query, "🎭 Choose a preset personality:", reply_markup=InlineKeyboardMarkup(buttons))
         return SELECTING_PRESET_PERSONALITY
 
 async def receive_personality_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -906,7 +1037,7 @@ async def preset_personality_handler(update: Update, context: ContextTypes.DEFAU
     user_data["personality"] = PERSONALITY_PRESETS[choice]
     save_user_data(user_id, user_data)
     context.user_data.pop('chat_history', None)
-    await query.edit_message_text(f"✅ Personality set to: *{choice}*. Chat history cleared.", parse_mode=ParseMode.MARKDOWN_V2)
+    await safe_edit_message(query, f"✅ Personality set to: *{choice}*. Chat history cleared.", parse_mode=ParseMode.MARKDOWN_V2)
     await query.message.reply_text("Returning to main menu...", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
     return USER_MAIN
 
@@ -988,6 +1119,7 @@ async def model_selection_handler(update: Update, context: ContextTypes.DEFAULT_
     if not category or not model_name:
         await safe_edit_message(query, "Sorry, an error occurred. Returning to the main menu.")
         return await start_command(update, context)
+    
     if context.user_data.get('voice_mode_setup'):
         context.user_data['voice_mode_model'] = model_name
         model_display_name = escape_markdown_v2(model_name.split('/')[-1])
@@ -1109,42 +1241,49 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     data = {"model": context.user_data['model'], "input": user_prompt, "voice": context.user_data.get('tts_voice', 'alloy')}
                     headers["Content-Type"] = "application/json"
                     response = await client.post(f"{A4F_API_BASE_URL}/audio/speech", headers=headers, json=data, timeout=60)
-                elif task_type in ['transcription', 'summarize']:
+                elif task_type == 'transcription':
                     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
-                    if task_type == 'summarize':
-                         data = {"model": context.user_data.get('model', 'provider-1/sonar'), "messages": [{"role": "system", "content": "You are a summarizing expert. Summarize the following document concisely and effectively."}, {"role": "user", "content": user_prompt}]}
-                         headers["Content-Type"] = "application/json"
-                         response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
-                    else:
-                        file_obj = await (message.voice or message.audio).get_file()
-                        temp_filename = os.path.join(TEMP_DIR, f"temp_{uuid.uuid4()}.ogg")
-                        await file_obj.download_to_drive(temp_filename)
-                        context.user_data['temp_file_path'] = temp_filename
-                        with open(temp_filename, 'rb') as f:
-                            response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': context.user_data['model']}, timeout=1200)
+                    file_obj = await (message.voice or message.audio).get_file()
+                    temp_filename = os.path.join(TEMP_DIR, f"temp_{uuid.uuid4()}.ogg")
+                    await file_obj.download_to_drive(temp_filename)
+                    context.user_data['temp_file_path'] = temp_filename
+                    with open(temp_filename, 'rb') as f:
+                        response = await client.post(f"{A4F_API_BASE_URL}/audio/transcriptions", headers=headers, files={'file': f}, data={'model': context.user_data['model']}, timeout=1200)
+                
+                # Handle regular single-model tasks
                 response.raise_for_status()
                 json_data = response.json() if task_type not in ['tts'] else None
-                if task_type == 'chat' or task_type == 'summarize':
+                
+                if task_type == 'chat':
                     choices = json_data.get('choices', [])
                     result_text = None
                     if choices and len(choices) > 0:
                         result_text = choices[0].get('message', {}).get('content')
                     if not result_text:
                         raise ValueError("API returned empty response.")
-                    if task_type == 'chat':
-                        context.user_data['chat_history'].append({"role": "assistant", "content": result_text})
-                        user_data = load_user_data(user_id)
-                        user_data['chat_history'] = list(context.user_data['chat_history'])
-                        save_user_data(user_id, user_data)
+                    context.user_data['chat_history'].append({"role": "assistant", "content": result_text})
+                    user_data = load_user_data(user_id)
+                    user_data['chat_history'] = list(context.user_data['chat_history'])
+                    save_user_data(user_id, user_data)
+                    
+                    # Check if content should be sent as file
+                    is_code = "```" in result_text
+                    is_long = len(result_text) > 4000  # Telegram message limit is ~4096 characters
+                    is_complex = is_code or is_long
+                    
+                    if is_complex:
+                        # Send as file for large/complex content
+                        await processing_message.delete()
+                        await _send_large_content_as_file(update, context, result_text, task_type)
+                        await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                    else:
+                        # Send as regular message for smaller content
                         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
                         text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/unlimited_"
                         try:
                             final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
                         except error.BadRequest:
                             final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-                        await forward_to_admin_if_watched(final_message, context)
-                    else:
-                        final_message = await processing_message.edit_text(f"*Summary:*\n\n{escape_markdown_v2(result_text)}", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
                         await forward_to_admin_if_watched(final_message, context)
                 elif task_type in ['image', 'image_edit', 'video']:
                      data_list = json_data.get('data')
@@ -1174,8 +1313,20 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
                 elif task_type == 'transcription':
                     if (transcribed_text := json_data.get('text')) is None: raise ValueError("API did not return a transcription.")
-                    final_message = await processing_message.edit_text(f"*Transcription:*\n\n_{escape_markdown_v2(transcribed_text)}_", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
-                    await forward_to_admin_if_watched(final_message, context)
+                    
+                    # Check if transcription should be sent as file
+                    is_long = len(transcribed_text) > 4000
+                    
+                    if is_long:
+                        # Send as file for large transcriptions
+                        await processing_message.delete()
+                        await _send_large_content_as_file(update, context, transcribed_text, task_type)
+                        await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                    else:
+                        # Send as regular message for smaller transcriptions
+                        final_message = await processing_message.edit_text(f"*Transcription:*\n\n_{escape_markdown_v2(transcribed_text)}_", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                        await forward_to_admin_if_watched(final_message, context)
+                
                 user_data = load_user_data(user_id)
                 user_data['stats'][task_type] = user_data['stats'].get(task_type, 0) + 1
                 save_user_data(user_id, user_data)
@@ -1485,8 +1636,21 @@ async def web_pilot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     result_text = choices[0].get('message', {}).get('content')
                 if not result_text:
                     raise ValueError("Web Pilot returned an empty response.")
-                final_message = await processing_message.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
-                await forward_to_admin_if_watched(final_message, context)
+                
+                # Check if content should be sent as file
+                is_code = "```" in result_text
+                is_long = len(result_text) > 4000
+                is_complex = is_code or is_long
+                
+                if is_complex:
+                    # Send as file for large/complex content
+                    await processing_message.delete()
+                    await _send_large_content_as_file(update, context, result_text, "web_pilot")
+                    await update.message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                else:
+                    # Send as regular message for smaller content
+                    final_message = await processing_message.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
+                    await forward_to_admin_if_watched(final_message, context)
                 return AWAITING_WEB_PROMPT
         except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
