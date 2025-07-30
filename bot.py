@@ -34,14 +34,14 @@ INITIAL_A4F_KEYS = [
 ]
 A4F_API_BASE_URL = "https://api.a4f.co/v1"
 ADMIN_CHAT_ID = 7088711806
-DEFAULT_VOICE_MODE_MODEL = "provider-6/gpt-4.1"
+DEFAULT_VOICE_MODE_MODEL = "provider-3/gpt-4.1-nano"
 
-PRO_REASONING_MODEL = "provider-6/gpt-4.1"
+PRO_REASONING_MODEL = "provider-3/gpt-4.1-nano"
 PRO_MODEL_MAPPING = {
     "web_search": "provider-3/gpt-4o-mini-search-preview",
     "coding": "provider-3/qwen-2.5-coder-32b",
     "reasoning": "provider-6/o4-mini-high",
-    "general_chat": "provider-6/gpt-4.1",
+    "general_chat": "provider-3/gpt-4.1-nano",
     "image_generation": "provider-4/imagen-3",
     "image_editing": "provider-6/black-forest-labs-flux-1-kontext-max",
     "video_generation": "provider-6/wan-2.1"
@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus": 10, "maintenance": False}
 
 MODELS = {
-    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"],
+    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"],
     "image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-1/FLUX.1-schnell", "provider-6/FLUX.1-1-pro", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5-flash"],
     "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-max", "provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
@@ -1564,7 +1564,7 @@ async def mixer_concept_2_handler(update: Update, context: ContextTypes.DEFAULT_
                     "and visually descriptive prompt for an AI image generator. Combine the elements logically and creatively. "
                     f"Merge these concepts: '{concept_1}' and '{concept_2}'"
                 )
-                data = { "model": "provider-6/gpt-4.1", "messages": [{"role": "user", "content": creative_brief}] }
+                data = { "model": "provider-3/gpt-4.1-nano", "messages": [{"role": "user", "content": creative_brief}] }
                 response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
                 response.raise_for_status()
                 json_data = response.json()
