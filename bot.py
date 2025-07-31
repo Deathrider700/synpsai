@@ -7,6 +7,9 @@ import json
 import psutil
 import random
 import traceback
+import requests
+import signal
+import sys
 from collections import deque
 from datetime import date, datetime
 import asyncio
@@ -18,30 +21,30 @@ from telegram.ext import (
 )
 from telegram.constants import ChatAction, ParseMode
 from telegram.request import HTTPXRequest
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure, DuplicateKeyError
 
-TELEGRAM_BOT_TOKEN = "8385126802:AAEqYo6r3IyteSnPgLHUTpAaxdNU1SfHlB4"
+TELEGRAM_BOT_TOKEN = "7649463897:AAE_oz0r72b-tRwZVWty18xZl2ku_IbqiDY"
+MONGODB_URL = "mongodb+srv://kuntaldebnath588:Qz4WfNVFVfpoLjOk@cluster0.c9losyl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 INITIAL_A4F_KEYS = [
-    "ddc-a4f-14783cb2294142ebb17d4bbb0e55d88f",
-    "ddc-a4f-3b6b2b21fd794959bb008593eba6b88b",
-    "ddc-a4f-d59bfe903deb4c3f9b0b724493e3d190",
-    "ddc-a4f-3f75074b54f646cf87fda35032e4690d",
-    "ddc-a4f-ce49dddb591e4bf48589971994a57a74",
-    "ddc-a4f-89e3e7a18a3e467d9ac2d9a38067ca3b",
-    "ddc-a4f-4e580ec612a94f98b1fe344edb812ab0",
-    "ddc-a4f-03a8b8ae52a841e2af8b81c6f02f5e15",
-    "ddc-a4f-1f90259072ad4d5d9077d466f2df42ee",
-    "ddc-a4f-003d19a80e85466ab58eca86eceabbf8"
+    "ddc-a4f-14783cb2294142ebb17d4bbb0e55d88f", "ddc-a4f-3b6b2b21fd794959bb008593eba6b88b",
+    "ddc-a4f-d59bfe903deb4c3f9b0b724493e3d190", "ddc-a4f-3f75074b54f646cf87fda35032e4690d",
+    "ddc-a4f-ce49dddb591e4bf48589971994a57a74", "ddc-a4f-89e3e7a18a3e467d9ac2d9a38067ca3b",
+    "ddc-a4f-4e580ec612a94f98b1fe344edb812ab0", "ddc-a4f-03a8b8ae52a841e2af8b81c6f02f5e15",
+    "ddc-a4f-1f90259072ad4d5d9077d466f2df42ee", "ddc-a4f-003d19a80e85466ab58eca86eceabbf8",
+    "ddc-a4f-4c0658a7764c432c9aa8e4a6d409afb3"
 ]
 A4F_API_BASE_URL = "https://api.a4f.co/v1"
 ADMIN_CHAT_ID = 7088711806
-DEFAULT_VOICE_MODE_MODEL = "provider-3/gpt-4.1-nano"
+DEFAULT_VOICE_MODE_MODEL = "provider-6/gpt-4.1"
+WORKFLOW_DESIGNER_MODEL = "provider-3/gpt-4.1-mini"
 
-PRO_REASONING_MODEL = "provider-3/gpt-4.1-nano"
+PRO_REASONING_MODEL = "provider-6/gpt-4.1"
 PRO_MODEL_MAPPING = {
     "web_search": "provider-3/gpt-4o-mini-search-preview",
     "coding": "provider-3/qwen-2.5-coder-32b",
     "reasoning": "provider-6/o4-mini-high",
-    "general_chat": "provider-3/gpt-4.1-nano",
+    "general_chat": "provider-6/gpt-4.1",
     "image_generation": "provider-4/imagen-3",
     "image_editing": "provider-6/black-forest-labs-flux-1-kontext-max",
     "video_generation": "provider-6/wan-2.1"
@@ -50,6 +53,8 @@ PRO_MODEL_MAPPING = {
 DATA_DIR = "data"
 USERS_DIR = os.path.join(DATA_DIR, "users")
 TEMP_DIR = os.path.join(DATA_DIR, "temp")
+WORKFLOWS_DIR = os.path.join(DATA_DIR, "workflows")
+MARKETPLACE_DIR = os.path.join(DATA_DIR, "marketplace")
 REDEEM_CODES_FILE = os.path.join(DATA_DIR, "redeem_codes.json")
 ERROR_LOG_FILE = os.path.join(DATA_DIR, "error_log.txt")
 API_KEYS_STATUS_FILE = os.path.join(DATA_DIR, "api_keys.json")
@@ -63,7 +68,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SETTINGS = {"daily_credits": 10, "new_user_bonus": 20, "referral_bonus": 10, "maintenance": False}
 
 MODELS = {
-    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"],
+    "chat": ["provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/gpt-4.1", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"],
     "image": ["provider-4/imagen-3", "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-schnell", "provider-6/sana-1.5", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-1/FLUX.1-schnell", "provider-6/FLUX.1-1-pro", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5-flash"],
     "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-max", "provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
@@ -86,49 +91,257 @@ VIDEO_RATIOS = {"Wide 🎬": "16:9", "Vertical 📱": "9:16", "Square 🖼️": 
 LOADING_MESSAGES = {"chat": "🤔 Cogitating on a thoughtful response...", "image": "🎨 Painting your masterpiece...", "image_edit": "🖌️ Applying artistic edits...", "video": "🎬 Directing your short film...", "tts": "🎙️ Warming up the vocal cords...", "transcription": "👂 Listening closely to your audio..."}
 REASONING_MESSAGES = {"image": "⚙️ Reasoning about the visual elements...", "video": "🎥 Planning the scene and action..."}
 
-(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT) = range(22)
+AVAILABLE_MODELS_PROMPT_CONTEXT = """
+You are a workflow design AI. Your task is to convert a user's natural language request into a structured JSON workflow.
+The JSON output must be a single JSON object with a "steps" key containing a list of operations.
+The output of one step can be used as input for the next using `prompt_from` or `input_from` which refers to the `output_variable` of a previous step.
+If a workflow does not require user input to start, set `requires_input` to `false`. Otherwise, set it to `true`.
+The initial user text input is always available as the variable `{initial_input}`. The initial user file input is available as `{initial_file_path}`.
+
+Here are the available model types and their parameters:
+
+1.  `"type": "chat"`
+    - `model`: (string) Model name.
+    - `prompt_template`: (string) The prompt to send. Use `{variable_name}` for placeholders.
+    - `output_variable`: (string) The name to store the text output.
+    - Available Models: "provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"
+
+2.  `"type": "image_generation"`
+    - `output_variable`: (string) The name to store the output image URL.
+    - `prompt_from`: (string) Variable containing the prompt text.
+    - **Standard Models (Support `n` and `size`):**
+        - `model`: (string) One of: "provider-4/imagen-3", "provider-3/FLUX.1-schnell", "provider-1/FLUX.1-schnell", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5", "provider-6/sana-1.5-flash"
+        - `n`: (integer, optional) Number of images.
+        - `size`: (string, optional) e.g., "1024x1024", "1792x1024", "1024x1792".
+    - **Advanced FLUX Models (Do NOT use `n` parameter):**
+        - `model`: (string) One of: "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-6/FLUX.1-1-pro"
+        - `size`: (string, optional) e.g., "1024x1024", "1792x1024", "1024x1792".
+
+3.  `"type": "image_edit"`
+    - `model`: (string) Model name.
+    - `prompt_from`: (string) Variable containing the edit instruction.
+    - `image_from`: (string) Variable containing the URL of the image to edit.
+    - `output_variable`: (string) The name to store the edited image URL.
+    - Available Models: "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-max"
+
+4.  `"type": "video_generation"`
+    - `model`: (string) Model name.
+    - `prompt_from`: (string) Variable containing the prompt text.
+    - `ratio`: (string) e.g., "9:16", "16:9".
+    - `duration`: (integer, optional, default: 4) Max 4.
+    - `quality`: (string, optional, default: "480p") Max "480p".
+    - `output_variable`: (string) The name to store the output video URL.
+    - Available Models: "provider-6/wan-2.1"
+
+5.  `"type": "tts"`
+    - `model`: (string) Model name.
+    - `input_from`: (string) Variable containing the text to convert to speech.
+    - `voice`: (string) One of: alloy, echo, fable, onyx, nova, shimmer.
+    - `output_variable`: (string) The name to store the output audio file path.
+    - Available Models: "provider-3/tts-1", "provider-6/sonic-2", "provider-6/sonic"
+
+6.  `"type": "transcription"`
+    - `model`: (string) Model name.
+    - `file_path_from`: (string) Variable containing the path of the audio file to transcribe (e.g., `{initial_file_path}`).
+    - `output_variable`: (string) The name to store the transcribed text.
+    - Available Models: "provider-2/whisper-1", "provider-6/distil-whisper-large-v3-en"
+
+7.  `"type": "custom_api"`
+    - `url`: (string) The endpoint URL.
+    - `method`: (string) "POST", "GET", etc.
+    - `headers`: (dict) e.g., {"Authorization": "Bearer {api_key_variable}", "Content-Type": "application/json"}.
+    - `body_template`: (dict/string) The request body as a JSON template.
+    - `output_variable`: (string) The name to store the result.
+    - `output_parser_path`: (string, optional) e.g., "choices.0.message.content".
+"""
+
+(USER_MAIN, SELECTING_MODEL, AWAITING_PROMPT, AWAITING_TTS_INPUT, AWAITING_AUDIO, AWAITING_IMAGE_FOR_EDIT, AWAITING_EDIT_PROMPT, AWAITING_TTS_VOICE, AWAITING_VIDEO_RATIO, AWAITING_PERSONALITY, AWAITING_BROADCAST_CONFIRMATION, AWAITING_IMAGE_SIZE, SELECTING_PRESET_PERSONALITY, ADMIN_MAIN, ADMIN_AWAITING_INPUT, SELECTING_VOICE_FOR_MODE, AWAITING_VOICE_MODE_INPUT, AWAITING_MIXER_CONCEPT_1, AWAITING_MIXER_CONCEPT_2, AWAITING_WEB_PROMPT, SELECTING_VOICE_MODEL_CHOICE, AWAITING_VOICE_MODE_PRO_INPUT, GET_WORKFLOW_DESCRIPTION, GET_WORKFLOW_NAME, CONFIRM_WORKFLOW, WORKFLOW_PRIVACY_SETTINGS, WORKFLOW_PRICING_SETTINGS, EDIT_WORKFLOW_DESCRIPTION, MARKETPLACE_BROWSE, AWAITING_AI_EDIT_INSTRUCTIONS) = range(30)
 
 _active_api_keys, _settings, _watched_users = [], {}, set()
 
+# MongoDB connection
+mongo_client = None
+db = None
+
+def init_mongodb():
+    """Initialize MongoDB connection"""
+    global mongo_client, db
+    try:
+        # Add timeout parameters to prevent hanging
+        mongo_client = MongoClient(
+            MONGODB_URL,
+            serverSelectionTimeoutMS=10000,  # 10 seconds timeout
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+            maxPoolSize=10,
+            retryWrites=True
+        )
+        
+        # Test the connection with timeout
+        mongo_client.admin.command('ping', serverSelectionTimeoutMS=5000)
+        db = mongo_client.telegram_bot
+        
+        # Create indexes with timeout handling
+        try:
+            db.users.create_index("user_id", unique=True, background=True)
+            logger.info("Created users index")
+        except Exception as e:
+            logger.warning(f"Could not create users index: {e}")
+            
+        try:
+            db.workflows.create_index([("user_id", 1), ("name", 1)], unique=True, background=True)
+            logger.info("Created workflows index")
+        except Exception as e:
+            logger.warning(f"Could not create workflows index: {e}")
+            
+        try:
+            db.api_keys.create_index("key", unique=True, background=True)
+            logger.info("Created api_keys index")
+        except Exception as e:
+            logger.warning(f"Could not create api_keys index: {e}")
+            
+        try:
+            db.marketplace.create_index("workflow_id", unique=True, background=True)
+            logger.info("Created marketplace index")
+        except Exception as e:
+            logger.warning(f"Could not create marketplace index: {e}")
+            
+        try:
+            db.redeem_codes.create_index("code", unique=True, background=True)
+            logger.info("Created redeem_codes index")
+        except Exception as e:
+            logger.warning(f"Could not create redeem_codes index: {e}")
+        
+        logger.info("MongoDB connected successfully")
+        return True
+    except ConnectionFailure as e:
+        logger.error(f"MongoDB connection failed: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"MongoDB initialization error: {e}")
+        return False
+
 def load_settings():
     global _settings
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, 'r') as f: _settings = json.load(f)
-    else: _settings = DEFAULT_SETTINGS.copy()
-    for key, value in DEFAULT_SETTINGS.items(): _settings.setdefault(key, value)
-    save_settings()
+    try:
+        if db is not None:
+            settings_doc = db.settings.find_one({"_id": "bot_settings"})
+            if settings_doc:
+                _settings = settings_doc.get("data", DEFAULT_SETTINGS.copy())
+            else:
+                _settings = DEFAULT_SETTINGS.copy()
+        else:
+            # Fallback to file system if MongoDB is not available
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, 'r') as f: _settings = json.load(f)
+            else: _settings = DEFAULT_SETTINGS.copy()
+        
+        for key, value in DEFAULT_SETTINGS.items(): _settings.setdefault(key, value)
+        save_settings()
+    except Exception as e:
+        logger.error(f"Error loading settings: {e}")
+        _settings = DEFAULT_SETTINGS.copy()
 
 def save_settings():
-    with open(SETTINGS_FILE, 'w') as f: json.dump(_settings, f, indent=4)
+    try:
+        if db is not None:
+            db.settings.replace_one(
+                {"_id": "bot_settings"},
+                {"_id": "bot_settings", "data": _settings},
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            with open(SETTINGS_FILE, 'w') as f: json.dump(_settings, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving settings: {e}")
+        # Fallback to file system
+        with open(SETTINGS_FILE, 'w') as f: json.dump(_settings, f, indent=4)
 
 def load_watched_users():
     global _watched_users
-    if os.path.exists(WATCHED_USERS_FILE):
-        with open(WATCHED_USERS_FILE, 'r') as f:
-            _watched_users = set(json.load(f))
-    else:
+    try:
+        if db is not None:
+            watched_doc = db.settings.find_one({"_id": "watched_users"})
+            if watched_doc:
+                _watched_users = set(watched_doc.get("data", []))
+            else:
+                _watched_users = set()
+        else:
+            # Fallback to file system
+            if os.path.exists(WATCHED_USERS_FILE):
+                with open(WATCHED_USERS_FILE, 'r') as f:
+                    _watched_users = set(json.load(f))
+            else:
+                _watched_users = set()
+    except Exception as e:
+        logger.error(f"Error loading watched users: {e}")
         _watched_users = set()
 
 def save_watched_users():
-    with open(WATCHED_USERS_FILE, 'w') as f:
-        json.dump(list(_watched_users), f)
+    try:
+        if db is not None:
+            db.settings.replace_one(
+                {"_id": "watched_users"},
+                {"_id": "watched_users", "data": list(_watched_users)},
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            with open(WATCHED_USERS_FILE, 'w') as f:
+                json.dump(list(_watched_users), f)
+    except Exception as e:
+        logger.error(f"Error saving watched users: {e}")
+        # Fallback to file system
+        with open(WATCHED_USERS_FILE, 'w') as f:
+            json.dump(list(_watched_users), f)
 
 def load_api_keys():
     global _active_api_keys
-    if not os.path.exists(API_KEYS_STATUS_FILE):
-        all_keys = [{"key": k, "active": True} for k in INITIAL_A4F_KEYS]
-        save_api_keys(all_keys)
-        _active_api_keys = [k['key'] for k in all_keys]
-        return all_keys
-    with open(API_KEYS_STATUS_FILE, 'r') as f:
-        all_keys_status = json.load(f)
-    _active_api_keys = [k['key'] for k in all_keys_status if k.get('active', True)]
-    return all_keys_status
+    try:
+        if db is not None:
+            keys_doc = db.settings.find_one({"_id": "api_keys"})
+            if keys_doc:
+                all_keys_status = keys_doc.get("data", [])
+            else:
+                all_keys_status = [{"key": k, "active": True} for k in INITIAL_A4F_KEYS]
+                save_api_keys(all_keys_status)
+        else:
+            # Fallback to file system
+            if not os.path.exists(API_KEYS_STATUS_FILE):
+                all_keys_status = [{"key": k, "active": True} for k in INITIAL_A4F_KEYS]
+                save_api_keys(all_keys_status)
+            else:
+                with open(API_KEYS_STATUS_FILE, 'r') as f:
+                    all_keys_status = json.load(f)
+        
+        _active_api_keys = [k['key'] for k in all_keys_status if k.get('active', True)]
+        return all_keys_status
+    except Exception as e:
+        logger.error(f"Error loading API keys: {e}")
+        all_keys_status = [{"key": k, "active": True} for k in INITIAL_A4F_KEYS]
+        _active_api_keys = [k['key'] for k in all_keys_status]
+        return all_keys_status
 
 def save_api_keys(keys_status):
-    with open(API_KEYS_STATUS_FILE, 'w') as f:
-        json.dump(keys_status, f, indent=4)
-    load_api_keys()
+    try:
+        if db is not None:
+            db.settings.replace_one(
+                {"_id": "api_keys"},
+                {"_id": "api_keys", "data": keys_status},
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            with open(API_KEYS_STATUS_FILE, 'w') as f:
+                json.dump(keys_status, f, indent=4)
+        load_api_keys()
+    except Exception as e:
+        logger.error(f"Error saving API keys: {e}")
+        # Fallback to file system
+        with open(API_KEYS_STATUS_FILE, 'w') as f:
+            json.dump(keys_status, f, indent=4)
+        load_api_keys()
 
 def get_random_api_key():
     return random.choice(_active_api_keys) if _active_api_keys else None
@@ -142,18 +355,37 @@ async def make_api_request_with_retry(client, url, headers, json_data=None, file
     
     for attempt in range(max_retries):
         try:
+            logger.info(f"=== API REQUEST ATTEMPT {attempt + 1}/{max_retries} ===")
+            logger.info(f"URL: {url}")
+            logger.info(f"Method: POST")
+            logger.info(f"Headers: {headers}")
             if json_data:
+                logger.info(f"JSON Data: {json_data}")
                 response = await client.post(url, headers=headers, json=json_data, timeout=timeout)
             elif files:
+                logger.info(f"Files: {list(files.keys())}")
+                logger.info(f"Data: {data}")
                 response = await client.post(url, headers=headers, data=data, files=files, timeout=timeout)
             else:
+                logger.info(f"Data: {data}")
                 response = await client.post(url, headers=headers, data=data, timeout=timeout)
+            
+            logger.info(f"Response Status: {response.status_code}")
+            logger.info(f"Response Headers: {dict(response.headers)}")
             
             response.raise_for_status()
             return response
             
         except httpx.HTTPStatusError as e:
             last_exception = e
+            logger.error(f"HTTP Status Error: {e.response.status_code}")
+            logger.error(f"Response Headers: {dict(e.response.headers)}")
+            try:
+                error_body = e.response.json()
+                logger.error(f"Response Body: {error_body}")
+            except:
+                logger.error(f"Response Text: {e.response.text}")
+            
             # Silent retry for 500 errors and other server errors
             if e.response.status_code >= 500 and attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
@@ -167,6 +399,7 @@ async def make_api_request_with_retry(client, url, headers, json_data=None, file
                 raise e
         except httpx.RequestError as e:
             last_exception = e
+            logger.error(f"Request Error: {str(e)}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
                 logger.debug(f"Silent retry {attempt + 1}/{max_retries} for {url} due to connection error")
@@ -175,6 +408,7 @@ async def make_api_request_with_retry(client, url, headers, json_data=None, file
                 raise e
         except Exception as e:
             last_exception = e
+            logger.error(f"Unexpected Error: {str(e)}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(2 ** attempt)
                 logger.debug(f"Silent retry {attempt + 1}/{max_retries} for {url} due to unexpected error")
@@ -189,46 +423,331 @@ async def make_api_request_with_retry(client, url, headers, json_data=None, file
         raise httpx.RequestError("All retry attempts failed")
 
 def setup_data_directory():
-    for path in [DATA_DIR, USERS_DIR, TEMP_DIR]:
-        if not os.path.exists(path): os.makedirs(path)
-    if not os.path.exists(REDEEM_CODES_FILE):
-        with open(REDEEM_CODES_FILE, 'w') as f: json.dump({}, f)
-    load_api_keys()
-    load_settings()
-    load_watched_users()
+    # Initialize MongoDB first with timeout protection
+    try:
+        mongo_connected = init_mongodb()
+        if mongo_connected:
+            logger.info("Using MongoDB for data storage")
+        else:
+            logger.warning("MongoDB connection failed, falling back to file system")
+    except Exception as e:
+        logger.error(f"MongoDB initialization failed: {e}")
+        mongo_connected = False
+    
+    if not mongo_connected:
+        # Create directories for file system fallback
+        try:
+            for path in [DATA_DIR, USERS_DIR, TEMP_DIR, WORKFLOWS_DIR, MARKETPLACE_DIR]:
+                if not os.path.exists(path): 
+                    os.makedirs(path)
+            if not os.path.exists(REDEEM_CODES_FILE):
+                with open(REDEEM_CODES_FILE, 'w') as f: 
+                    json.dump({}, f)
+            logger.info("File system fallback initialized")
+        except Exception as e:
+            logger.error(f"Error setting up file system fallback: {e}")
+    
+    # Load data with error handling
+    try:
+        load_api_keys()
+    except Exception as e:
+        logger.error(f"Error loading API keys: {e}")
+    
+    try:
+        load_settings()
+    except Exception as e:
+        logger.error(f"Error loading settings: {e}")
+    
+    try:
+        load_watched_users()
+    except Exception as e:
+        logger.error(f"Error loading watched users: {e}")
 
 def load_user_data(user_id):
-    user_file = os.path.join(USERS_DIR, f"{user_id}.json")
     today = date.today().isoformat()
-    if not os.path.exists(user_file):
-        user_data = {"credits": _settings["daily_credits"] + _settings["new_user_bonus"], "last_login_date": today, "is_new": True, "personality": None, "banned": False, "referral_code": f"REF-{uuid.uuid4().hex[:8].upper()}", "referred_by": None, "referrals_made": 0, "stats": {k: 0 for k in LOADING_MESSAGES.keys()}}
+    try:
+        if db is not None:
+            user_data = db.users.find_one({"user_id": user_id})
+            if not user_data:
+                user_data = {"user_id": user_id, "credits": _settings["daily_credits"] + _settings["new_user_bonus"], "last_login_date": today, "is_new": True, "personality": None, "banned": False, "referral_code": f"REF-{uuid.uuid4().hex[:8].upper()}", "referred_by": None, "referrals_made": 0, "stats": {k: 0 for k in LOADING_MESSAGES.keys()}}
+                save_user_data(user_id, user_data)
+                return user_data
+        else:
+            # Fallback to file system
+            user_file = os.path.join(USERS_DIR, f"{user_id}.json")
+            if not os.path.exists(user_file):
+                user_data = {"user_id": user_id, "credits": _settings["daily_credits"] + _settings["new_user_bonus"], "last_login_date": today, "is_new": True, "personality": None, "banned": False, "referral_code": f"REF-{uuid.uuid4().hex[:8].upper()}", "referred_by": None, "referrals_made": 0, "stats": {k: 0 for k in LOADING_MESSAGES.keys()}}
+                save_user_data(user_id, user_data)
+                return user_data
+            try:
+                with open(user_file, 'r') as f: user_data = json.load(f)
+                user_data["user_id"] = user_id  # Ensure user_id is set
+            except (json.JSONDecodeError, FileNotFoundError):
+                user_data = {"user_id": user_id, "credits": 0, "last_login_date": "1970-01-01", "is_new": True, "personality": None, "banned": False}
+        
+        if user_data.get("last_login_date") != today and user_id != ADMIN_CHAT_ID:
+            user_data["credits"] = user_data.get("credits", 0) + _settings["daily_credits"]
+            user_data["last_login_date"] = today
+
+        defaults = {"is_new": False, "personality": None, "banned": False, "referral_code": f"REF-{uuid.uuid4().hex[:8].upper()}", "referred_by": None, "referrals_made": 0, "stats": {k: 0 for k in LOADING_MESSAGES.keys()}}
+        for key, value in defaults.items(): user_data.setdefault(key, value)
+        if "stats" not in user_data or not isinstance(user_data["stats"], dict): user_data["stats"] = {k: 0 for k in LOADING_MESSAGES.keys()}
+
         save_user_data(user_id, user_data)
         return user_data
-    try:
-        with open(user_file, 'r') as f: user_data = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        user_data = {"credits": 0, "last_login_date": "1970-01-01", "is_new": True, "personality": None, "banned": False}
-    if user_data.get("last_login_date") != today and user_id != ADMIN_CHAT_ID:
-        user_data["credits"] = user_data.get("credits", 0) + _settings["daily_credits"]
-        user_data["last_login_date"] = today
-
-    defaults = {"is_new": False, "personality": None, "banned": False, "referral_code": f"REF-{uuid.uuid4().hex[:8].upper()}", "referred_by": None, "referrals_made": 0, "stats": {k: 0 for k in LOADING_MESSAGES.keys()}}
-    for key, value in defaults.items(): user_data.setdefault(key, value)
-    if "stats" not in user_data or not isinstance(user_data["stats"], dict): user_data["stats"] = {k: 0 for k in LOADING_MESSAGES.keys()}
-
-    save_user_data(user_id, user_data)
-    return user_data
+    except Exception as e:
+        logger.error(f"Error loading user data for {user_id}: {e}")
+        user_data = {"user_id": user_id, "credits": _settings["daily_credits"], "last_login_date": today, "is_new": True, "personality": None, "banned": False, "referral_code": f"REF-{uuid.uuid4().hex[:8].upper()}", "referred_by": None, "referrals_made": 0, "stats": {k: 0 for k in LOADING_MESSAGES.keys()}}
+        return user_data
 
 def save_user_data(user_id, data):
-    with open(os.path.join(USERS_DIR, f"{user_id}.json"), 'w') as f: json.dump(data, f, indent=4)
+    try:
+        data["user_id"] = user_id  # Ensure user_id is always set
+        if db is not None:
+            db.users.replace_one(
+                {"user_id": user_id},
+                data,
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            with open(os.path.join(USERS_DIR, f"{user_id}.json"), 'w') as f: 
+                json.dump(data, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving user data for {user_id}: {e}")
+        # Fallback to file system
+        with open(os.path.join(USERS_DIR, f"{user_id}.json"), 'w') as f: 
+            json.dump(data, f, indent=4)
 
 def load_redeem_codes():
     try:
-        with open(REDEEM_CODES_FILE, 'r') as f: return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError): return {}
+        if db is not None:
+            codes_doc = db.settings.find_one({"_id": "redeem_codes"})
+            if codes_doc:
+                return codes_doc.get("data", {})
+            else:
+                return {}
+        else:
+            # Fallback to file system
+            with open(REDEEM_CODES_FILE, 'r') as f: 
+                return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading redeem codes: {e}")
+        return {}
 
 def save_redeem_codes(codes):
-    with open(REDEEM_CODES_FILE, 'w') as f: json.dump(codes, f, indent=4)
+    try:
+        if db is not None:
+            db.settings.replace_one(
+                {"_id": "redeem_codes"},
+                {"_id": "redeem_codes", "data": codes},
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            with open(REDEEM_CODES_FILE, 'w') as f: 
+                json.dump(codes, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving redeem codes: {e}")
+        # Fallback to file system
+        with open(REDEEM_CODES_FILE, 'w') as f: 
+            json.dump(codes, f, indent=4)
+
+def load_workflows(user_id):
+    """Load workflows for a specific user."""
+    try:
+        if db is not None:
+            workflows_doc = db.workflows.find_one({"user_id": user_id})
+            if workflows_doc:
+                workflows = workflows_doc.get("workflows", {})
+                logger.info(f"Loaded {len(workflows)} workflows from MongoDB for user {user_id}")
+                return workflows
+            else:
+                logger.info(f"No workflows found in MongoDB for user {user_id}")
+                return {}
+        else:
+            # Fallback to file system
+            user_workflow_file = os.path.join(WORKFLOWS_DIR, f"user_{user_id}_workflows.json")
+            if os.path.exists(user_workflow_file):
+                try:
+                    with open(user_workflow_file, 'r') as f:
+                        workflows = json.load(f)
+                        logger.info(f"Loaded {len(workflows)} workflows from file for user {user_id}")
+                        return workflows
+                except (json.JSONDecodeError, FileNotFoundError):
+                    logger.warning(f"Error reading workflow file for user {user_id}")
+                    return {}
+            logger.info(f"No workflow file found for user {user_id}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error loading workflows for user {user_id}: {e}")
+        return {}
+
+def save_workflows(user_id, workflows):
+    """Save workflows for a specific user."""
+    try:
+        if db is not None:
+            db.workflows.replace_one(
+                {"user_id": user_id},
+                {"user_id": user_id, "workflows": workflows},
+                upsert=True
+            )
+            logger.info(f"Saved {len(workflows)} workflows to MongoDB for user {user_id}")
+        else:
+            # Fallback to file system
+            user_workflow_file = os.path.join(WORKFLOWS_DIR, f"user_{user_id}_workflows.json")
+            with open(user_workflow_file, 'w') as f:
+                json.dump(workflows, f, indent=4)
+            logger.info(f"Saved {len(workflows)} workflows to file for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error saving workflows for user {user_id}: {e}")
+        # Fallback to file system
+        user_workflow_file = os.path.join(WORKFLOWS_DIR, f"user_{user_id}_workflows.json")
+        with open(user_workflow_file, 'w') as f:
+            json.dump(workflows, f, indent=4)
+        logger.info(f"Saved {len(workflows)} workflows to file (fallback) for user {user_id}")
+
+def substitute_variables(template, variables):
+    """Substitute variables in templates for workflow execution."""
+    if isinstance(template, str):
+        for key, value in variables.items():
+            template = template.replace(f"{{{key}}}", str(value))
+        return template
+    elif isinstance(template, dict):
+        return {k: substitute_variables(v, variables) for k, v in template.items()}
+    elif isinstance(template, list):
+        return [substitute_variables(i, variables) for i in template]
+    return template
+
+def create_workflow_metadata(name, workflow_data, creator_id, is_public=False, price=0):
+    """Create a workflow with metadata."""
+    return {
+        "name": name,
+        "workflow": workflow_data,
+        "creator_id": creator_id,
+        "created_at": datetime.now().isoformat(),
+        "is_public": is_public,
+        "price": price,  # 0 = free, >0 = paid
+        "downloads": 0,
+        "rating": 0.0,
+        "ratings_count": 0
+    }
+
+def calculate_workflow_credits(workflow):
+    """Calculate credits needed to run a workflow based on steps."""
+    credits = 0
+    for step in workflow.get("steps", []):
+        step_type = step.get("type")
+        # External API calls don't require credits
+        if step_type == "custom_api":
+            continue
+        # All other step types require 1 credit each
+        elif step_type in ["chat", "image_generation", "image_edit", "video_generation", "tts", "transcription"]:
+            credits += 1
+    return max(credits, 1)  # Minimum 1 credit per workflow run
+
+def load_marketplace_workflows():
+    """Load all public workflows from marketplace."""
+    try:
+        if db is not None:
+            marketplace_doc = db.marketplace.find_one({"_id": "public_workflows"})
+            if marketplace_doc:
+                return marketplace_doc.get("workflows", {})
+            else:
+                return {}
+        else:
+            # Fallback to file system
+            marketplace_file = os.path.join(MARKETPLACE_DIR, "public_workflows.json")
+            if os.path.exists(marketplace_file):
+                try:
+                    with open(marketplace_file, 'r') as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    return {}
+            return {}
+    except Exception as e:
+        logger.error(f"Error loading marketplace workflows: {e}")
+        return {}
+
+def save_marketplace_workflows(workflows):
+    """Save public workflows to marketplace."""
+    try:
+        if db is not None:
+            db.marketplace.replace_one(
+                {"_id": "public_workflows"},
+                {"_id": "public_workflows", "workflows": workflows},
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            marketplace_file = os.path.join(MARKETPLACE_DIR, "public_workflows.json")
+            with open(marketplace_file, 'w') as f:
+                json.dump(workflows, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving marketplace workflows: {e}")
+        # Fallback to file system
+        marketplace_file = os.path.join(MARKETPLACE_DIR, "public_workflows.json")
+        with open(marketplace_file, 'w') as f:
+            json.dump(workflows, f, indent=4)
+
+def add_workflow_to_marketplace(workflow_id, workflow_metadata):
+    """Add a workflow to the public marketplace."""
+    marketplace_workflows = load_marketplace_workflows()
+    marketplace_workflows[workflow_id] = workflow_metadata
+    save_marketplace_workflows(marketplace_workflows)
+
+def remove_workflow_from_marketplace(workflow_id):
+    """Remove a workflow from the public marketplace."""
+    marketplace_workflows = load_marketplace_workflows()
+    if workflow_id in marketplace_workflows:
+        del marketplace_workflows[workflow_id]
+        save_marketplace_workflows(marketplace_workflows)
+
+def load_user_owned_workflows(user_id):
+    """Load workflows that the user has purchased or downloaded."""
+    try:
+        if db is not None:
+            owned_doc = db.user_owned.find_one({"user_id": user_id})
+            if owned_doc:
+                return owned_doc.get("owned_workflows", [])
+            else:
+                return []
+        else:
+            # Fallback to file system
+            user_owned_file = os.path.join(WORKFLOWS_DIR, f"user_{user_id}_owned.json")
+            if os.path.exists(user_owned_file):
+                try:
+                    with open(user_owned_file, 'r') as f:
+                        return json.load(f)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    return []
+            return []
+    except Exception as e:
+        logger.error(f"Error loading owned workflows for user {user_id}: {e}")
+        return []
+
+def save_user_owned_workflows(user_id, owned_workflows):
+    """Save workflows that the user owns/has downloaded."""
+    try:
+        if db is not None:
+            db.user_owned.replace_one(
+                {"user_id": user_id},
+                {"user_id": user_id, "owned_workflows": owned_workflows},
+                upsert=True
+            )
+        else:
+            # Fallback to file system
+            user_owned_file = os.path.join(WORKFLOWS_DIR, f"user_{user_id}_owned.json")
+            with open(user_owned_file, 'w') as f:
+                json.dump(owned_workflows, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving owned workflows for user {user_id}: {e}")
+        # Fallback to file system
+        user_owned_file = os.path.join(WORKFLOWS_DIR, f"user_{user_id}_owned.json")
+        with open(user_owned_file, 'w') as f:
+            json.dump(owned_workflows, f, indent=4)
 
 def check_and_use_credit(user_id: int) -> bool:
     if is_admin(user_id): return True
@@ -315,6 +834,520 @@ async def handle_api_error_with_retry_and_refund(user_id: int, error: Exception,
     
     return user_message
 
+async def make_api_request_for_workflow(method, url, headers=None, json_data=None, data=None, files=None):
+    """Make an API request for workflow operations using httpx for consistency."""
+    try:
+        # Increase timeout for A4F API calls
+        timeout = 300 if "api.a4f.co" in url else 180
+        async with httpx.AsyncClient() as client:
+            if json_data:
+                response = await client.post(url, headers=headers, json=json_data, timeout=timeout)
+            elif files:
+                response = await client.post(url, headers=headers, data=data, files=files, timeout=timeout)
+            else:
+                response = await client.post(url, headers=headers, data=data, timeout=timeout)
+            
+            response.raise_for_status()
+            
+            # Handle different content types properly
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/json' in content_type:
+                return response.json()
+            elif 'audio' in content_type or 'image' in content_type or 'video' in content_type:
+                return response.content  # Return bytes for binary content
+            else:
+                # For text content, return as string
+                return response.text
+    except httpx.RequestException as e:
+        logger.error(f"API Request failed: {e}")
+        error_details = e.response.text if e.response else "No response from server."
+        return {"error": str(e), "details": error_details}
+
+async def design_workflow(user_description: str) -> dict:
+    """Design a workflow using AI based on user description."""
+    headers = {"Authorization": f"Bearer {get_random_api_key()}", "Content-Type": "application/json"}
+    data = {
+        "model": WORKFLOW_DESIGNER_MODEL,
+        "messages": [{"role": "system", "content": AVAILABLE_MODELS_PROMPT_CONTEXT}, {"role": "user", "content": user_description}],
+        "temperature": 0.1, "max_tokens": 2048,
+    }
+    
+    # Use the same retry logic as the direct tools
+    async with httpx.AsyncClient() as client:
+        response = await make_api_request_with_retry(
+            client, 
+            f"{A4F_API_BASE_URL}/chat/completions", 
+            headers=headers, 
+            json_data=data,
+            timeout=120
+        )
+        response_data = response.json()
+    
+    if "error" in response_data: 
+        return response_data
+    try:
+        content = response_data['choices'][0]['message']['content']
+        match = re.search(r'```json\\s*(.*?)\\s*```', content, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+        else:
+            json_str = content[content.find('{'):content.rfind('}')+1] or content[content.find('['):content.rfind(']')+1]
+        
+        parsed_json = json.loads(json_str)
+        if isinstance(parsed_json, list):
+            return {"requires_input": True, "steps": parsed_json}
+        return parsed_json
+    except Exception as e:
+        logger.error(f"Failed to parse workflow from AI response: {e}\nResponse was: {content}")
+        return {"error": "Could not design a valid workflow. The AI's response was malformed."}
+
+async def execute_workflow(workflow: dict, initial_input: str, chat_id: int, context: ContextTypes.DEFAULT_TYPE, initial_file_path: str = None):
+    """Execute a complete workflow with multiple steps."""
+    variables = {"initial_input": initial_input, "initial_file_path": initial_file_path}
+    if "api_keys" in workflow:
+        variables.update(workflow["api_keys"])
+    temp_files = []
+    try:
+        for i, step in enumerate(workflow["steps"]):
+            step_type = step.get("type")
+            if not step_type:
+                raise ValueError(f"Step {i+1} is missing the 'type' attribute.")
+            
+            logger.info(f"=== PROCESSING STEP {i+1} ===")
+            logger.info(f"Step type: {step_type}")
+            logger.info(f"Step data: {step}")
+            
+            await context.bot.send_message(chat_id, f"⚙️ Step {i+1}/{len(workflow['steps'])}: Running `{escape_markdown_v2(step_type)}`\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+            output_variable = step.get("output_variable")
+            output = None
+
+            if step_type == "chat":
+                logger.info(f"=== ENTERING CHAT STEP ===")
+                logger.info(f"Step {i+1}: {step}")
+                model = step.get("model")
+                if not model: 
+                    raise ValueError(f"Chat step {i+1} is missing 'model'.")
+                prompt_template = step.get("prompt_template")
+                if not prompt_template: 
+                    raise ValueError(f"Chat step {i+1} is missing 'prompt_template'.")
+                prompt = substitute_variables(prompt_template, variables)
+                
+                logger.info(f"=== CHAT STEP DEBUG ===")
+                logger.info(f"Model: {model}")
+                logger.info(f"Prompt template: {prompt_template}")
+                logger.info(f"Substituted prompt: {prompt}")
+                logger.info(f"Variables: {variables}")
+                
+                data = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+                headers = {"Authorization": f"Bearer {get_random_api_key()}", "Content-Type": "application/json"}
+                
+                # Use the same retry logic as the direct tools
+                async with httpx.AsyncClient() as client:
+                    response = await make_api_request_with_retry(
+                        client, 
+                        f"{A4F_API_BASE_URL}/chat/completions", 
+                        headers=headers, 
+                        json_data=data,
+                        timeout=120
+                    )
+                    result = response.json()
+                output = result['choices'][0]['message']['content']
+                
+                logger.info(f"Chat response: {output}")
+                logger.info(f"Output variable: {output_variable}")
+            
+            elif step_type == "image_generation":
+                model = step.get("model")
+                if not model: 
+                    raise ValueError(f"Image generation step {i+1} is missing 'model'.")
+                prompt_from = step.get("prompt_from")
+                if not prompt_from: 
+                    raise ValueError("Image generation step is missing 'prompt_from'.")
+                prompt = variables.get(prompt_from)
+                if not prompt: 
+                    raise Exception(f"Input for image generation (from variable '{prompt_from}') is empty or missing.")
+                data = {"model": model, "prompt": prompt}
+                if "n" in step: 
+                    data["n"] = step["n"]
+                if "size" in step: 
+                    data["size"] = step["size"]
+                headers = {"Authorization": f"Bearer {get_random_api_key()}", "Content-Type": "application/json"}
+                
+                # Use the same retry logic as the direct tools
+                async with httpx.AsyncClient() as client:
+                    response = await make_api_request_with_retry(
+                        client, 
+                        f"{A4F_API_BASE_URL}/images/generations", 
+                        headers=headers, 
+                        json_data=data,
+                        timeout=180
+                    )
+                    result = response.json()
+                output = result['data'][0]['url']
+
+            elif step_type == "image_edit":
+                model = step.get("model")
+                if not model: 
+                    raise ValueError(f"Image edit step {i+1} is missing 'model'.")
+                prompt_from = step.get("prompt_from")
+                if not prompt_from: 
+                    raise ValueError("Image edit step is missing 'prompt_from'.")
+                prompt = variables.get(prompt_from)
+                logger.info(f"=== IMAGE EDIT STEP DEBUG ===")
+                logger.info(f"Prompt from variable: {prompt_from}")
+                logger.info(f"All variables: {variables}")
+                logger.info(f"Retrieved prompt: {prompt}")
+                if not prompt: 
+                    raise Exception(f"Prompt for image edit (from variable '{prompt_from}') is empty or missing.")
+                image_from = step.get("image_from")
+                if not image_from: 
+                    raise ValueError("Image edit step is missing 'image_from'.")
+                
+                # Handle case where image_from might be a literal string with braces
+                if image_from.startswith("{") and image_from.endswith("}"):
+                    # Extract the variable name from braces
+                    actual_variable = image_from[1:-1]
+                    logger.info(f"Extracted image variable name: {actual_variable}")
+                    image_path = variables.get(actual_variable)
+                else:
+                    image_path = variables.get(image_from)
+                
+                if not image_path: 
+                    raise Exception(f"Image path for image edit (from variable '{image_from}') is empty or missing.")
+                
+                # Check if it's a local file path or URL
+                if os.path.exists(image_path):
+                    # Local file - read directly
+                    with open(image_path, 'rb') as f:
+                        image_content = f.read()
+                    headers = {"Authorization": f"Bearer {get_random_api_key()}"}
+                    data = {"model": model, "prompt": prompt}
+                    files = {"image": ("image.jpg", image_content, "image/jpeg")}
+                else:
+                    # URL - download first
+                    image_response = requests.get(image_path)
+                    image_response.raise_for_status()
+                    headers = {"Authorization": f"Bearer {get_random_api_key()}"}
+                    data = {"model": model, "prompt": prompt}
+                    files = {"image": ("image.png", image_response.content, "image/png")}
+                
+                # Use the same retry logic as the direct tools
+                async with httpx.AsyncClient() as client:
+                    response = await make_api_request_with_retry(
+                        client, 
+                        f"{A4F_API_BASE_URL}/images/edits", 
+                        headers=headers, 
+                        data=data, 
+                        files=files,
+                        timeout=180
+                    )
+                    result = response.json()
+                output = result['data'][0]['url']
+
+            elif step_type == "video_generation":
+                model = step.get("model")
+                if not model: 
+                    raise ValueError(f"Video generation step {i+1} is missing 'model'.")
+                prompt_from = step.get("prompt_from")
+                if not prompt_from: 
+                    raise ValueError("Video generation step is missing 'prompt_from'.")
+                prompt = variables.get(prompt_from)
+                if not prompt: 
+                    raise Exception(f"Input for video generation (from variable '{prompt_from}') is empty or missing.")
+                ratio = step.get("ratio")
+                if not ratio: 
+                    raise ValueError("Video generation step is missing required 'ratio' parameter.")
+                data = {"model": model, "prompt": prompt, "ratio": ratio}
+                # Add required fields with defaults if not specified
+                data["duration"] = step.get("duration", 4)  # Default 4 seconds
+                data["quality"] = step.get("quality", "480p")  # Default 480p
+                headers = {"Authorization": f"Bearer {get_random_api_key()}", "Content-Type": "application/json"}
+                
+                # Log the request details
+                logger.info(f"=== VIDEO GENERATION REQUEST ===")
+                logger.info(f"URL: {A4F_API_BASE_URL}/video/generations")
+                logger.info(f"Headers: {headers}")
+                logger.info(f"Data: {data}")
+                logger.info(f"Step config: {step}")
+                
+                # Use the same retry logic as the direct video tool
+                async with httpx.AsyncClient() as client:
+                    try:
+                        response = await make_api_request_with_retry(
+                            client, 
+                            f"{A4F_API_BASE_URL}/video/generations", 
+                            headers=headers, 
+                            json_data=data,
+                            timeout=300  # Longer timeout for video generation
+                        )
+                        result = response.json()
+                        logger.info(f"=== VIDEO GENERATION RESPONSE ===")
+                        logger.info(f"Status Code: {response.status_code}")
+                        logger.info(f"Response Headers: {dict(response.headers)}")
+                        logger.info(f"Response Body: {result}")
+                        output = result['data'][0]['url']
+                    except Exception as e:
+                        logger.error(f"=== VIDEO GENERATION ERROR ===")
+                        logger.error(f"Error type: {type(e).__name__}")
+                        logger.error(f"Error message: {str(e)}")
+                        if hasattr(e, 'response'):
+                            logger.error(f"Response status: {e.response.status_code}")
+                            logger.error(f"Response headers: {dict(e.response.headers)}")
+                            try:
+                                error_body = e.response.json()
+                                logger.error(f"Response body: {error_body}")
+                            except:
+                                logger.error(f"Response text: {e.response.text}")
+                        raise
+            
+            elif step_type == "tts":
+                model = step.get("model")
+                if not model: 
+                    raise ValueError(f"TTS step {i+1} is missing 'model'.")
+                input_from = step.get("input_from")
+                if not input_from: 
+                    raise ValueError("TTS step is missing 'input_from'.")
+                text_input = variables.get(input_from)
+                if not text_input: 
+                    raise Exception(f"Input for TTS (from variable '{input_from}') is empty or missing.")
+                voice = step.get("voice")
+                if not voice: 
+                    raise ValueError("TTS step is missing required 'voice' parameter.")
+                data = {"model": model, "input": text_input, "voice": voice}
+                headers = {"Authorization": f"Bearer {get_random_api_key()}", "Content-Type": "application/json"}
+                
+                # Use the same retry logic as the direct tools
+                async with httpx.AsyncClient() as client:
+                    response = await make_api_request_with_retry(
+                        client, 
+                        f"{A4F_API_BASE_URL}/audio/speech", 
+                        headers=headers, 
+                        json_data=data,
+                        timeout=60
+                    )
+                    result = response.content  # TTS returns bytes directly
+                temp_file_path = f"{uuid.uuid4()}.mp3"
+                
+                # Write the audio bytes to file
+                with open(temp_file_path, "wb") as f: 
+                    f.write(result)
+                temp_files.append(temp_file_path)
+                output = temp_file_path
+            
+            elif step_type == "transcription":
+                model = step.get("model")
+                if not model: 
+                    raise ValueError(f"Transcription step {i+1} is missing 'model'.")
+                file_path_from = step.get("file_path_from")
+                if not file_path_from: 
+                    raise ValueError("Transcription step is missing 'file_path_from'.")
+                
+                # Debug logging
+                logger.info(f"=== TRANSCRIPTION STEP DEBUG ===")
+                logger.info(f"file_path_from: {file_path_from}")
+                logger.info(f"variables: {variables}")
+                logger.info(f"initial_file_path: {initial_file_path}")
+                
+                # Handle case where file_path_from might be a literal string with braces
+                if file_path_from.startswith("{") and file_path_from.endswith("}"):
+                    # Extract the variable name from braces
+                    actual_variable = file_path_from[1:-1]
+                    logger.info(f"Extracted variable name: {actual_variable}")
+                    file_path = variables.get(actual_variable)
+                else:
+                    file_path = variables.get(file_path_from)
+                
+                logger.info(f"resolved file_path: {file_path}")
+                
+                if not file_path or not os.path.exists(file_path): 
+                    raise Exception(f"File path for transcription (from variable '{file_path_from}') is invalid or file does not exist.")
+                headers = {"Authorization": f"Bearer {get_random_api_key()}"}
+                
+                # Use the exact same format as single model transcription
+                logger.info(f"=== WORKFLOW TRANSCRIPTION DEBUG ===")
+                logger.info(f"File path: {file_path}")
+                logger.info(f"File exists: {os.path.exists(file_path)}")
+                logger.info(f"File size: {os.path.getsize(file_path) if os.path.exists(file_path) else 'N/A'}")
+                
+                async with httpx.AsyncClient() as client:
+                    with open(file_path, 'rb') as f:
+                        logger.info(f"File opened successfully")
+                        response = await client.post(
+                            f"{A4F_API_BASE_URL}/audio/transcriptions", 
+                            headers=headers, 
+                            files={'file': f}, 
+                            data={'model': model}, 
+                            timeout=1200
+                        )
+                        logger.info(f"Response status: {response.status_code}")
+                        logger.info(f"Response headers: {dict(response.headers)}")
+                        result = response.json()
+                        logger.info(f"=== TRANSCRIPTION RESPONSE ===")
+                        logger.info(f"Response JSON: {result}")
+                        logger.info(f"Response keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+                        
+                        # Handle different possible response structures
+                        if isinstance(result, dict):
+                            if 'text' in result:
+                                output = result['text']
+                            elif 'transcription' in result:
+                                output = result['transcription']
+                            elif 'content' in result:
+                                output = result['content']
+                            else:
+                                # If no expected field, use the entire result as string
+                                output = str(result)
+                        else:
+                            # If result is not a dict, convert to string
+                            output = str(result)
+
+            elif step_type == "custom_api":
+                url = substitute_variables(step.get('url'), variables)
+                if not url: 
+                    raise ValueError("Custom API step is missing 'url'.")
+                method = step.get('method', 'GET')
+                headers = substitute_variables(step.get('headers', {}), variables)
+                body = substitute_variables(step.get('body_template', {}), variables)
+                
+                # Log the request details for debugging
+                logger.info(f"Custom API Request: {method} {url}")
+                logger.info(f"Headers: {headers}")
+                logger.info(f"Body: {body}")
+                
+                # Use the same retry logic as the direct tools
+                async with httpx.AsyncClient() as client:
+                    response = await make_api_request_with_retry(
+                        client, 
+                        url, 
+                        headers=headers, 
+                        json_data=body,
+                        timeout=300  # Longer timeout for external APIs
+                    )
+                    result = response.json()
+                logger.info(f"Custom API Raw Result Type: {type(result)}")
+                logger.info(f"Custom API Raw Result: {result}")
+                
+                # Handle different response types from Segmind
+                if isinstance(result, dict):
+                    # If it's a dictionary, look for common video URL fields
+                    if "video_url" in result:
+                        output = result["video_url"]
+                    elif "url" in result:
+                        output = result["url"]
+                    elif "data" in result and isinstance(result["data"], dict):
+                        if "video_url" in result["data"]:
+                            output = result["data"]["video_url"]
+                        elif "url" in result["data"]:
+                            output = result["data"]["url"]
+                        else:
+                            output = result
+                    else:
+                        output = result
+                elif isinstance(result, str):
+                    # If it's a string, it might be a direct URL
+                    if result.startswith("http"):
+                        output = result
+                    else:
+                        output = result
+                else:
+                    output = result
+                
+                # Apply output parser if specified
+                if step.get("output_parser_path"):
+                    try:
+                        path_keys = step["output_parser_path"].split('.')
+                        temp_output = output
+                        for key in path_keys:
+                            if key.isdigit(): 
+                                temp_output = temp_output[int(key)]
+                            else: 
+                                temp_output = temp_output[key]
+                        output = temp_output
+                    except Exception as e:
+                        logger.warning(f"Output parser failed: {e}, using original output")
+                
+                logger.info(f"Custom API Final Output: {output}")
+            else:
+                await context.bot.send_message(chat_id, f"⚠️ Unknown or unsupported step type: {step_type}")
+                return
+            
+            if output_variable:
+                variables[output_variable] = output
+                logger.info(f"=== VARIABLE ASSIGNMENT ===")
+                logger.info(f"Assigned '{output_variable}' = '{output}'")
+                logger.info(f"All variables after assignment: {variables}")
+                
+            if i == len(workflow["steps"]) - 1:
+                await context.bot.send_message(chat_id, "✅ Workflow complete\\! Here is your final result:", parse_mode=ParseMode.MARKDOWN_V2)
+                logger.info(f"Final output type: {type(output)}, value: {output}")
+                
+                if isinstance(output, str) and output.startswith("http"):
+                    # Handle A4F video URLs specially since they require auth
+                    if "api.a4f.co" in output and "/videos/serve/" in output:
+                        try:
+                            # Download the video with authentication
+                            headers = {"Authorization": f"Bearer {get_random_api_key()}"}
+                            response = requests.get(output, headers=headers, stream=True, timeout=60)
+                            response.raise_for_status()
+                            
+                            # Save to temporary file
+                            temp_video_path = os.path.join(TEMP_DIR, f"temp_video_{uuid.uuid4()}.mp4")
+                            with open(temp_video_path, 'wb') as f:
+                                for chunk in response.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                            
+                            # Send the video file
+                            with open(temp_video_path, 'rb') as video_file:
+                                await context.bot.send_video(chat_id, video=video_file, caption="🎬 Here's your video\\!")
+                            
+                            # Clean up
+                            os.remove(temp_video_path)
+                        except Exception as e:
+                            logger.error(f"Failed to download and send video: {e}")
+                            # Fallback to URL if download fails
+                            await context.bot.send_message(chat_id, f"🎬 Here's your video\\!\n\n🔗 Video URL: {escape_markdown_v2(output)}", parse_mode=ParseMode.MARKDOWN_V2)
+                    else:
+                        try:
+                            response = requests.get(output, stream=True, timeout=15, allow_redirects=True)
+                            response.raise_for_status()
+                            content_type = response.headers.get('Content-Type', '')
+                            response.close()
+
+                            if 'image' in content_type:
+                                await context.bot.send_photo(chat_id, photo=output, caption="🖼️ Here's your image!")
+                            elif 'video' in content_type:
+                                await context.bot.send_video(chat_id, video=output, caption="🎬 Here's your video!")
+                            elif 'audio' in content_type:
+                                await context.bot.send_audio(chat_id, audio=output, caption="🎤 Here's your audio!")
+                            else:
+                                await context.bot.send_message(chat_id, f"🔗 Result URL: {escape_markdown_v2(output)}", parse_mode=ParseMode.MARKDOWN_V2)
+                        except requests.exceptions.RequestException as e:
+                            logger.warning(f"Could not determine content type for URL {output}: {e}")
+                            await context.bot.send_message(chat_id, f"🔗 Result URL (could not fetch preview): {escape_markdown_v2(output)}", parse_mode=ParseMode.MARKDOWN_V2)
+                elif isinstance(output, str) and os.path.exists(output):
+                    try:
+                        with open(output, 'rb') as f: 
+                            await context.bot.send_audio(chat_id, audio=f, caption="🎤 Here's your audio!")
+                    except Exception as e:
+                        logger.error(f"Error sending file: {e}")
+                        await context.bot.send_message(chat_id, f"📄 File path: {escape_markdown_v2(output)}", parse_mode=ParseMode.MARKDOWN_V2)
+                elif output is not None:
+                    try:
+                        await context.bot.send_message(chat_id, f"📄 Result:\n\n`{escape_markdown_v2(str(output))}`", parse_mode=ParseMode.MARKDOWN_V2)
+                    except Exception as e:
+                        logger.error(f"Error sending result message: {e}")
+                        await context.bot.send_message(chat_id, "✅ Workflow completed successfully!")
+    except Exception as e:
+        logger.error(f"Error executing step: {e}")
+        error_message = f"❌ Error during workflow execution:\n`{escape_markdown_v2(str(e))}`\nAborting\\."
+        await context.bot.send_message(chat_id, error_message, parse_mode=ParseMode.MARKDOWN_V2)
+    finally:
+        for f in temp_files:
+            if os.path.exists(f): 
+                os.remove(f)
+        if initial_file_path and os.path.exists(initial_file_path):
+             os.remove(initial_file_path)
+
 def escape_markdown_v2(text: str) -> str:
     return re.sub(f'([{re.escape(r"_*[]()~`>#+-=|{}.!")}])', r'\\\1', text)
 
@@ -322,10 +1355,22 @@ async def safe_edit_message(query, text, reply_markup=None, parse_mode=None):
     """Safely edit a message, handling both text and media messages."""
     try:
         await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
-    except error.BadRequest:
-        # If the current message is a media message, send a new text message
-        await query.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
-        await query.message.delete()
+    except error.BadRequest as e:
+        if "Message to edit not found" in str(e) or "Message is not modified" in str(e):
+            # Message was deleted or is too old, send a new message
+            try:
+                await query.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+            except Exception:
+                # If reply also fails, try to send a new message to the chat
+                await query.message.chat.send_message(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+        else:
+            # If the current message is a media message, send a new text message
+            try:
+                await query.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+                await query.message.delete()
+            except Exception:
+                # If delete fails, just send a new message
+                await query.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
 
 async def safe_edit_message_for_message(message, text, reply_markup=None, parse_mode=None):
     """Safely edit a message when we have a Message object instead of CallbackQuery."""
@@ -435,6 +1480,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         [InlineKeyboardButton("🎙️ TTS", callback_data="act_tts"), InlineKeyboardButton("✍️ Transcription", callback_data="act_transcription")],
         [InlineKeyboardButton("🎤 Voice Mode", callback_data="act_voice_mode"), InlineKeyboardButton("✨ Voice Mode Pro", callback_data="act_voice_mode_pro")],
         [InlineKeyboardButton("🎨 Image Mixer", callback_data="act_mixer"), InlineKeyboardButton("🌐 Web Pilot", callback_data="act_web")],
+        [InlineKeyboardButton("🚀 Create Agent", callback_data="act_create_workflow"), InlineKeyboardButton("📚 My Agents", callback_data="act_list_workflows")],
+        [InlineKeyboardButton("🏪 Agent Hub", callback_data="act_marketplace"), InlineKeyboardButton("💼 My Owned Agents", callback_data="act_owned_workflows")],
         [InlineKeyboardButton("👤 My Profile", callback_data="act_me"), InlineKeyboardButton("🎭 Set Personality", callback_data="act_personality")],
         [InlineKeyboardButton("❓ Help & Info", callback_data="act_help")]
     ]
@@ -559,15 +1606,17 @@ async def _speak(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, vo
 async def _analyze_and_deliver(update: Update, context: ContextTypes.DEFAULT_TYPE, response_text: str):
     is_code = "```" in response_text
     is_list = any(line.strip().startswith(("- ", "* ", "1. ", "2. ")) for line in response_text.split('\n'))
-    is_long = len(response_text) > 4000  # Telegram message limit is ~4096 characters
-    is_complex = is_code or is_list or is_long
+    is_long = len(response_text) > 400
 
     voice = context.user_data.get('voice_mode_voice', 'onyx')
 
-    if is_complex:
-        heads_up_text = "I have the answer for you. Because it contains code or is quite long, I'm sending it as a file."
+    if is_code or is_list or is_long:
+        heads_up_text = "I have the answer for you. Because it contains code or is quite long, I'm sending it as a text message."
         await _speak(context, update.effective_chat.id, heads_up_text, voice)
-        await _send_large_content_as_file(update, context, response_text, "voice_pro")
+        try:
+            await update.message.reply_text(response_text, parse_mode=ParseMode.MARKDOWN)
+        except error.BadRequest:
+            await update.message.reply_text(response_text)
     else:
         await _speak(context, update.effective_chat.id, response_text, voice)
 
@@ -614,136 +1663,6 @@ async def _get_pro_voice_intent(text: str) -> dict:
     except Exception as e:
         logger.error(f"Cognitive routing failed: {e}. Falling back to general chat.")
         return {"intent": "chat", "category": "general_chat", "model": PRO_MODEL_MAPPING["general_chat"], "prompt": text}
-
-async def _send_large_content_as_file(update: Update, context: ContextTypes.DEFAULT_TYPE, content: str, task_type: str = "chat"):
-    """
-    Send large content as a file with appropriate extension based on content type.
-    """
-    # Determine file extension based on content analysis
-    extension = ".txt"
-    filename = f"response_{uuid.uuid4().hex[:8]}"
-    
-    # Check for code blocks and determine language
-    code_blocks = re.findall(r'```(\w+)?\n(.*?)```', content, re.DOTALL)
-    if code_blocks:
-        # If there are code blocks, use the first language found
-        for lang, code in code_blocks:
-            if lang:
-                lang = lang.lower()
-                if lang in ['python', 'py']:
-                    extension = ".py"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['javascript', 'js']:
-                    extension = ".js"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['html']:
-                    extension = ".html"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['css']:
-                    extension = ".css"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['json']:
-                    extension = ".json"
-                    filename = f"data_{uuid.uuid4().hex[:8]}"
-                elif lang in ['xml']:
-                    extension = ".xml"
-                    filename = f"data_{uuid.uuid4().hex[:8]}"
-                elif lang in ['sql']:
-                    extension = ".sql"
-                    filename = f"query_{uuid.uuid4().hex[:8]}"
-                elif lang in ['bash', 'shell', 'sh']:
-                    extension = ".sh"
-                    filename = f"script_{uuid.uuid4().hex[:8]}"
-                elif lang in ['cpp', 'c++']:
-                    extension = ".cpp"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['c']:
-                    extension = ".c"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['java']:
-                    extension = ".java"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['php']:
-                    extension = ".php"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['ruby', 'rb']:
-                    extension = ".rb"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['go']:
-                    extension = ".go"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['rust']:
-                    extension = ".rs"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['swift']:
-                    extension = ".swift"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['kotlin', 'kt']:
-                    extension = ".kt"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['scala']:
-                    extension = ".scala"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['r']:
-                    extension = ".r"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['matlab']:
-                    extension = ".m"
-                    filename = f"code_{uuid.uuid4().hex[:8]}"
-                elif lang in ['yaml', 'yml']:
-                    extension = ".yml"
-                    filename = f"config_{uuid.uuid4().hex[:8]}"
-                elif lang in ['toml']:
-                    extension = ".toml"
-                    filename = f"config_{uuid.uuid4().hex[:8]}"
-                elif lang in ['ini', 'conf']:
-                    extension = ".ini"
-                    filename = f"config_{uuid.uuid4().hex[:8]}"
-                elif lang in ['markdown', 'md']:
-                    extension = ".md"
-                    filename = f"document_{uuid.uuid4().hex[:8]}"
-                break
-    
-    # Check for specific content patterns
-    if not code_blocks:
-        if re.search(r'#\s+', content, re.MULTILINE):  # Markdown headers
-            extension = ".md"
-            filename = f"document_{uuid.uuid4().hex[:8]}"
-        elif re.search(r'^\s*[-*+]\s+', content, re.MULTILINE):  # Lists
-            extension = ".md"
-            filename = f"document_{uuid.uuid4().hex[:8]}"
-        elif re.search(r'^\s*\d+\.\s+', content, re.MULTILINE):  # Numbered lists
-            extension = ".md"
-            filename = f"document_{uuid.uuid4().hex[:8]}"
-        elif len(content) > 4000:  # Very long text
-            extension = ".txt"
-            filename = f"text_{uuid.uuid4().hex[:8]}"
-    
-    # Create the file
-    file_path = os.path.join(TEMP_DIR, f"{filename}{extension}")
-    try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        # Send the file
-        with open(file_path, 'rb') as f:
-            await context.bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=f,
-                filename=f"{filename}{extension}",
-                caption=f"📄 Large response from {task_type.replace('_', ' ').title()}"
-            )
-        
-        # Clean up the file
-        os.remove(file_path)
-        
-    except Exception as e:
-        logger.error(f"Error sending file: {e}")
-        # Fallback to text message if file sending fails
-        try:
-            await update.effective_message.reply_text(content, parse_mode=ParseMode.MARKDOWN)
-        except error.BadRequest:
-            await update.effective_message.reply_text(content)
 
 async def voice_mode_pro_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -1047,6 +1966,14 @@ async def action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     _prefix, category = query.data.split('_', 1)
     if category == 'voice_mode_pro':
         return await voice_mode_pro_start_handler(update, context)
+    if category == 'create_workflow': 
+        return await new_workflow_entry(update, context)
+    if category == 'list_workflows': 
+        return await list_workflows(update, context)
+    if category == 'marketplace': 
+        return await marketplace_browse(update, context)
+    if category == 'owned_workflows': 
+        return await list_owned_workflows(update, context)
     if category == 'help': return await help_handler(update, context)
     if category == 'me': return await profile_handler(update, context)
     if category == 'personality': return await set_personality_handler(update, context)
@@ -1226,6 +2153,11 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     elif task_type == 'video':
                         endpoint, action = 'video/generations', ChatAction.UPLOAD_VIDEO
                         data.update({'ratio': context.user_data.get('video_ratio', '16:9'), 'quality': '480p', 'duration': 4})
+                        # Log the direct video tool request
+                        logger.info(f"=== DIRECT VIDEO TOOL REQUEST ===")
+                        logger.info(f"URL: {A4F_API_BASE_URL}/{endpoint}")
+                        logger.info(f"Headers: {headers}")
+                        logger.info(f"Data: {data}")
                     else:
                         endpoint, action = 'images/edits', ChatAction.UPLOAD_PHOTO
                         files = {'image': open(context.user_data['image_edit_path'], 'rb')}
@@ -1252,7 +2184,20 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                 
                 # Handle regular single-model tasks
                 response.raise_for_status()
-                json_data = response.json() if task_type not in ['tts'] else None
+                
+                # Log response for video tool
+                if task_type == 'video':
+                    logger.info(f"=== DIRECT VIDEO TOOL RESPONSE ===")
+                    logger.info(f"Status Code: {response.status_code}")
+                    logger.info(f"Response Headers: {dict(response.headers)}")
+                    try:
+                        json_data = response.json()
+                        logger.info(f"Response Body: {json_data}")
+                    except Exception as e:
+                        logger.error(f"Failed to parse response JSON: {e}")
+                        logger.error(f"Response Text: {response.text}")
+                else:
+                    json_data = response.json() if task_type not in ['tts'] else None
                 
                 if task_type == 'chat':
                     choices = json_data.get('choices', [])
@@ -1265,26 +2210,13 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     user_data = load_user_data(user_id)
                     user_data['chat_history'] = list(context.user_data['chat_history'])
                     save_user_data(user_id, user_data)
-                    
-                    # Check if content should be sent as file
-                    is_code = "```" in result_text
-                    is_long = len(result_text) > 4000  # Telegram message limit is ~4096 characters
-                    is_complex = is_code or is_long
-                    
-                    if is_complex:
-                        # Send as file for large/complex content
-                        await processing_message.delete()
-                        await _send_large_content_as_file(update, context, result_text, task_type)
-                        await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
-                    else:
-                        # Send as regular message for smaller content
-                        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
-                        text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/unlimited_"
-                        try:
-                            final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-                        except error.BadRequest:
-                            final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-                        await forward_to_admin_if_watched(final_message, context)
+                    keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                    text = result_text + f"\n\n_Conversation: {len(context.user_data['chat_history'])}/unlimited_"
+                    try:
+                        final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+                    except error.BadRequest:
+                        final_message = await processing_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+                    await forward_to_admin_if_watched(final_message, context)
                 elif task_type in ['image', 'image_edit', 'video']:
                      data_list = json_data.get('data')
                      if not data_list:
@@ -1313,19 +2245,8 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                     await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
                 elif task_type == 'transcription':
                     if (transcribed_text := json_data.get('text')) is None: raise ValueError("API did not return a transcription.")
-                    
-                    # Check if transcription should be sent as file
-                    is_long = len(transcribed_text) > 4000
-                    
-                    if is_long:
-                        # Send as file for large transcriptions
-                        await processing_message.delete()
-                        await _send_large_content_as_file(update, context, transcribed_text, task_type)
-                        await message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
-                    else:
-                        # Send as regular message for smaller transcriptions
-                        final_message = await processing_message.edit_text(f"*Transcription:*\n\n_{escape_markdown_v2(transcribed_text)}_", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
-                        await forward_to_admin_if_watched(final_message, context)
+                    final_message = await processing_message.edit_text(f"*Transcription:*\n\n_{escape_markdown_v2(transcribed_text)}_", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+                    await forward_to_admin_if_watched(final_message, context)
                 
                 user_data = load_user_data(user_id)
                 user_data['stats'][task_type] = user_data['stats'].get(task_type, 0) + 1
@@ -1334,6 +2255,18 @@ async def process_task(update: Update, context: ContextTypes.DEFAULT_TYPE, task_
                 else: return USER_MAIN
         except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError, error.TimedOut) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
+            if task_type == 'video':
+                logger.error(f"=== DIRECT VIDEO TOOL ERROR ===")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {str(e)}")
+                if hasattr(e, 'response'):
+                    logger.error(f"Response status: {e.response.status_code}")
+                    logger.error(f"Response headers: {dict(e.response.headers)}")
+                    try:
+                        error_body = e.response.json()
+                        logger.error(f"Response body: {error_body}")
+                    except:
+                        logger.error(f"Response text: {e.response.text}")
             if attempt < max_retries - 1:
                 await processing_message.edit_text("⏳ Hold on a sec!")
                 await asyncio.sleep(2)
@@ -1564,7 +2497,7 @@ async def mixer_concept_2_handler(update: Update, context: ContextTypes.DEFAULT_
                     "and visually descriptive prompt for an AI image generator. Combine the elements logically and creatively. "
                     f"Merge these concepts: '{concept_1}' and '{concept_2}'"
                 )
-                data = { "model": "provider-3/gpt-4.1-nano", "messages": [{"role": "user", "content": creative_brief}] }
+                data = { "model": "provider-6/gpt-4.1", "messages": [{"role": "user", "content": creative_brief}] }
                 response = await client.post(f"{A4F_API_BASE_URL}/chat/completions", headers=headers, json=data, timeout=1200)
                 response.raise_for_status()
                 json_data = response.json()
@@ -1636,21 +2569,8 @@ async def web_pilot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     result_text = choices[0].get('message', {}).get('content')
                 if not result_text:
                     raise ValueError("Web Pilot returned an empty response.")
-                
-                # Check if content should be sent as file
-                is_code = "```" in result_text
-                is_long = len(result_text) > 4000
-                is_complex = is_code or is_long
-                
-                if is_complex:
-                    # Send as file for large/complex content
-                    await processing_message.delete()
-                    await _send_large_content_as_file(update, context, result_text, "web_pilot")
-                    await update.message.reply_text("✨ Task complete!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
-                else:
-                    # Send as regular message for smaller content
-                    final_message = await processing_message.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
-                    await forward_to_admin_if_watched(final_message, context)
+                final_message = await processing_message.edit_text(result_text, parse_mode=ParseMode.MARKDOWN)
+                await forward_to_admin_if_watched(final_message, context)
                 return AWAITING_WEB_PROMPT
         except (httpx.RequestError, ValueError, KeyError, IndexError, json.JSONDecodeError) as e:
             logger.error(f"Error on attempt {attempt + 1}: {e}")
@@ -1668,6 +2588,1393 @@ async def web_pilot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             refund_credit(user_id)
             await processing_message.edit_text("❌ A critical internal error occurred. Credit refunded."); break
     return AWAITING_WEB_PROMPT
+
+# ========== WORKFLOW HANDLERS ==========
+
+async def new_workflow_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start the workflow creation process."""
+    query = update.callback_query
+    await query.answer()
+    text = ("✍️ **Describe your new agent's workflow\\.**\n\n"
+            "Be specific: mention models, the order of operations, and any custom APIs\\. To use an audio file as input, just say 'when I send an audio file'\\.\n\n"
+            "*Example*: `When I send an audio file, transcribe it, then use the text to create a video.`")
+    await safe_edit_message(query, text, parse_mode=ParseMode.MARKDOWN_V2)
+    return GET_WORKFLOW_DESCRIPTION
+
+async def process_workflow_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process the workflow description and design it using AI."""
+    description = update.message.text
+    user_id = update.effective_user.id
+    
+    # Check credits for workflow creation (costs 2 credits)
+    if not use_multiple_credits(user_id, 2):
+        await update.message.reply_text("🚫 You need at least 2 credits to create an agent. Please redeem a code or wait for your daily refill.")
+        return await start_command(update, context)
+    
+    msg = await update.message.reply_text("🧠 Understood. Designing the workflow now... this might take a moment.")
+    
+    try:
+        workflow_design = await design_workflow(description)
+        if "error" in workflow_design:
+            refund_multiple_credits(user_id, 2)  # Refund on error
+            await msg.edit_text(f"❌ Design Failed: {workflow_design['error']}\n\nPlease try describing your workflow again or rephrase your request.")
+            return GET_WORKFLOW_DESCRIPTION
+        
+        context.user_data['new_workflow_design'] = workflow_design
+        keyboard = [
+            [InlineKeyboardButton("✅ Confirm & Name Agent", callback_data="confirm_creation")], 
+            [InlineKeyboardButton("✏️ Redescribe", callback_data="create_new")], 
+            [InlineKeyboardButton("❌ Cancel", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        text = ("🤖 **Workflow Designed\\!**\n\n"
+                "Here is the plan I've created\\. Does this look correct\\?\n\n"
+                f"```json\n{escape_markdown_v2(json.dumps(workflow_design, indent=2))}\n```")
+        await msg.edit_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        return CONFIRM_WORKFLOW
+    except Exception as e:
+        refund_multiple_credits(user_id, 2)  # Refund on error
+        logger.error(f"Error in workflow design: {e}")
+        await msg.edit_text("❌ An error occurred while designing the workflow. Please try again.")
+        return GET_WORKFLOW_DESCRIPTION
+
+async def confirm_and_get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Confirm workflow and ask for name."""
+    await update.callback_query.answer()
+    await safe_edit_message(update.callback_query, "👍 Great\\! Please give your new agent a short, memorable name\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    return GET_WORKFLOW_NAME
+
+async def save_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Save the workflow with the given name."""
+    name = update.message.text.strip()
+    user_id = update.effective_user.id
+    user_workflows = load_workflows(user_id)
+    
+    if name in user_workflows:
+        await update.message.reply_text("An agent with that name already exists\\. Please choose another name\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return GET_WORKFLOW_NAME
+    
+    # Create workflow with metadata (default: private, free)
+    workflow_metadata = create_workflow_metadata(
+        name=name,
+        workflow_data=context.user_data['new_workflow_design'],
+        creator_id=user_id,
+        is_public=False,
+        price=0
+    )
+    
+    user_workflows[name] = workflow_metadata
+    save_workflows(user_id, user_workflows)
+    context.user_data['current_workflow_name'] = name
+    del context.user_data['new_workflow_design']
+    
+    # Debug logging
+    logger.info(f"Saved workflow '{name}' for user {user_id}. Total workflows: {list(user_workflows.keys())}")
+    
+    # Ask about privacy settings
+    keyboard = [
+        [InlineKeyboardButton("🔒 Keep Private", callback_data="privacy_private")],
+        [InlineKeyboardButton("🌐 Make Public", callback_data="privacy_public")],
+        [InlineKeyboardButton("⏭️ Skip Settings", callback_data="privacy_skip")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"✅ Agent '{escape_markdown_v2(name)}' has been saved\\!\n\n🔧 Would you like to configure privacy settings?",
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=reply_markup
+    )
+    return WORKFLOW_PRIVACY_SETTINGS
+
+async def cancel_workflow_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel workflow creation and refund credits."""
+    if update.callback_query:
+        await update.callback_query.answer()
+    
+    # Refund credits if workflow was being created
+    if 'new_workflow_design' in context.user_data:
+        del context.user_data['new_workflow_design']
+        refund_multiple_credits(update.effective_user.id, 2)
+    
+    return await start_command(update, context)
+
+async def list_workflows(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """List user's workflows with edit and delete options."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    user_workflows = load_workflows(user_id)
+    
+    # Debug logging
+    logger.info(f"User {user_id} workflows: {list(user_workflows.keys()) if user_workflows else 'None'}")
+    
+    if not user_workflows:
+        text = "📚 You don't have any agents yet\\.\n\nPress 'Create New Agent' to build your first one\\!"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Create New Agent", callback_data="act_create_workflow")], [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
+        await safe_edit_message(query, text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    keyboard = []
+    for name, workflow_metadata in user_workflows.items():
+        # Handle both old and new format
+        if isinstance(workflow_metadata, dict) and "workflow" in workflow_metadata:
+            is_public = workflow_metadata.get("is_public", False)
+            price = workflow_metadata.get("price", 0)
+            edit_history = workflow_metadata.get("edit_history", [])
+            
+            # Determine status and edit icons
+            status_icon = "🌐" if is_public else "🔒"
+            ai_edit_icon = ""
+            
+            # Check if workflow has been AI-edited
+            if edit_history:
+                ai_edits = [h for h in edit_history if h.get('type') == 'ai_edit']
+                if ai_edits:
+                    ai_edit_icon = " 🤖"  # AI-edited indicator
+                elif len(edit_history) > 0:
+                    ai_edit_icon = " ✏️"  # Manually edited indicator
+            
+            price_text = f" (💰{price}c)" if is_public and price > 0 else " (🆓)" if is_public else ""
+            name_display = f"{status_icon} {name}{ai_edit_icon}{price_text}"
+        else:
+            name_display = f"🔒 {name}"
+        
+        # Main row with run button
+        keyboard.append([InlineKeyboardButton(f"▶️ {name_display}", callback_data=f"select_workflow:{name}")])
+        
+        # Action buttons row
+        action_buttons = [
+            InlineKeyboardButton("✏️ Edit", callback_data=f"edit_workflow:{name}"),
+            InlineKeyboardButton("📄 JSON", callback_data=f"view_json:{name}"),
+            InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_workflow:{name}")
+        ]
+        
+        # Add edit history button if available
+        if isinstance(workflow_metadata, dict) and workflow_metadata.get("edit_history"):
+            action_buttons.insert(2, InlineKeyboardButton("📝 History", callback_data=f"edit_history:{name}"))
+        
+        keyboard.append(action_buttons)
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = "📚 *Your Agents*\n\n🔒 \\= Private, 🌐 \\= Public, 🤖 \\= AI\\-edited, ✏️ \\= Manually edited\n\nSelect an agent to run it, or use the action buttons\\."
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return USER_MAIN
+
+async def edit_history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Display edit history for a workflow."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    edit_history = workflow_metadata.get("edit_history", []) if isinstance(workflow_metadata, dict) else []
+    
+    if not edit_history:
+        text = f"📝 **Edit History: '{escape_markdown_v2(workflow_name)}'**\n\n❌ No edit history available for this workflow\\."
+    else:
+        text = f"📝 **Edit History: '{escape_markdown_v2(workflow_name)}'**\n\n"
+        
+        for i, edit in enumerate(edit_history[-5:], 1):  # Show last 5 edits
+            edit_type = "🤖 AI Edit" if edit.get('type') == 'ai_edit' else "✏️ Manual Edit"
+            timestamp = edit.get('timestamp', 'Unknown time')
+            instructions = edit.get('instructions', 'No details available')
+            
+            # Parse timestamp for better display
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                formatted_time = dt.strftime('%m/%d %H:%M')
+            except:
+                formatted_time = timestamp[:16] if len(timestamp) > 16 else timestamp
+            
+            text += f"**{i}\\. {edit_type}** \\({formatted_time}\\)\n"
+            dots = "\\.\\.\\." if len(instructions) > 100 else ""
+            text += f"â {escape_markdown_v2(instructions[:100])}{dots}\n\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("✏️ Edit Workflow", callback_data=f"edit_workflow:{workflow_name}")],
+        [InlineKeyboardButton("🤖 AI Edit", callback_data=f"ai_edit:{workflow_name}")],
+        [InlineKeyboardButton("📚 Back to Library", callback_data="act_list_workflows")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return USER_MAIN
+
+async def view_json_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle viewing workflow JSON."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    workflow = workflow_metadata.get("workflow", workflow_metadata)  # Handle both old and new formats
+    
+    try:
+        workflow_json = json.dumps(workflow, indent=2)
+        
+        if len(workflow_json) > 4000:
+            # Save to temporary file and send as document
+            temp_file_path = os.path.join(TEMP_DIR, f"{workflow_name}_workflow.json")
+            with open(temp_file_path, 'w', encoding='utf-8') as f:
+                f.write(workflow_json)
+            
+            with open(temp_file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=f"{workflow_name}_workflow.json",
+                    caption=f"📄 JSON for workflow '{workflow_name}'"
+                )
+            
+            # Clean up temp file
+            try:
+                os.remove(temp_file_path)
+            except:
+                pass
+        else:
+            # Send as formatted text
+            await query.message.reply_text(
+                f"📄 **JSON for '{escape_markdown_v2(workflow_name)}':**\n\n```json\n{workflow_json}\n```",
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+        
+        await safe_edit_message(
+            query,
+            f"✅ JSON for '{escape_markdown_v2(workflow_name)}' sent\\!",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        
+    except Exception as e:
+        logger.error(f"Error viewing JSON for workflow {workflow_name}: {e}")
+        await safe_edit_message(
+            query,
+            f"❌ Error viewing JSON for '{escape_markdown_v2(workflow_name)}'\\. Please try again\\.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+    
+    return USER_MAIN
+
+async def select_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Select and run a workflow."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]), parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    workflow = workflow_metadata.get("workflow", workflow_metadata)  # Handle both old and new formats
+    context.user_data['active_workflow'] = workflow_name
+    
+    # Calculate credits needed based on workflow steps
+    credits_needed = calculate_workflow_credits(workflow)
+    
+    if workflow.get("requires_input", True):
+        prompt_text = (f"🎬 **Agent Activated: '{escape_markdown_v2(workflow_name)}'**\n\n"
+                      f"💰 *Running this agent will cost {credits_needed} credits*\n\n"
+                      f"This agent is now active\\. Please provide the input to start the workflow \\(e\\.g\\., text or an audio file\\)\\.")
+        keyboard = [[InlineKeyboardButton("⬅️ Exit to Main Menu", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(query, prompt_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    else:
+        await safe_edit_message(query, f"🎬 **Agent Activated: '{escape_markdown_v2(workflow_name)}'**\n\nThis agent does not require input\\. Starting automatically\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        
+        # Check credits for workflow execution (dynamic based on steps)
+        if not use_multiple_credits(user_id, credits_needed):
+            await query.message.reply_text(f"🚫 You need at least {credits_needed} credits to run this agent. Please redeem a code or wait for your daily refill.")
+            return await start_command(update, context)
+        
+        try:
+            await execute_workflow(workflow, "", query.message.chat_id, context)
+        except Exception as e:
+            refund_multiple_credits(user_id, credits_needed)  # Refund on error
+            logger.error(f"Error executing workflow: {e}")
+            await query.message.reply_text("❌ An error occurred while running the agent. Credits have been refunded.")
+        
+        # Don't call start_command with callback query, just return to main menu
+        return USER_MAIN
+
+async def handle_workflow_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle text input for active workflow."""
+    active_workflow_name = context.user_data.get('active_workflow')
+    active_marketplace_workflow = context.user_data.get('active_marketplace_workflow')
+    
+    if not active_workflow_name and not active_marketplace_workflow:
+        return USER_MAIN
+    
+    user_id = update.effective_user.id
+    
+    # Handle marketplace workflow
+    if active_marketplace_workflow:
+        return await handle_marketplace_workflow_input(update, context)
+    
+    # Handle regular workflow
+    user_workflows = load_workflows(user_id)
+    workflow_metadata = user_workflows.get(active_workflow_name)
+    
+    if not workflow_metadata:
+        await update.message.reply_text("❌ Active workflow not found\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        context.user_data.pop('active_workflow', None)
+        return USER_MAIN
+    
+    workflow = workflow_metadata.get("workflow", workflow_metadata)  # Handle both old and new formats
+    credits_needed = calculate_workflow_credits(workflow)
+    
+    # Check credits for workflow execution (dynamic based on steps)
+    if not use_multiple_credits(user_id, credits_needed):
+        await update.message.reply_text(f"🚫 You need at least {credits_needed} credits to run this agent. Please redeem a code or wait for your daily refill.")
+        context.user_data.pop('active_workflow', None)
+        return await start_command(update, context)
+    
+    await update.message.reply_text("🚀 Input received\\! Starting the agent workflow\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    
+    try:
+        await execute_workflow(workflow, update.message.text, update.message.chat_id, context)
+        context.user_data.pop('active_workflow', None)
+    except Exception as e:
+        refund_multiple_credits(user_id, credits_needed)  # Refund on error
+        logger.error(f"Error executing workflow: {e}")
+        await update.message.reply_text("❌ An error occurred while running the agent. Credits have been refunded.")
+        context.user_data.pop('active_workflow', None)
+    
+    return USER_MAIN
+
+async def handle_workflow_file_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle file input for active workflow."""
+    active_workflow_name = context.user_data.get('active_workflow')
+    if not active_workflow_name:
+        return USER_MAIN
+    
+    user_id = update.effective_user.id
+    user_workflows = load_workflows(user_id)
+    workflow_metadata = user_workflows.get(active_workflow_name)
+    
+    if not workflow_metadata:
+        await update.message.reply_text("❌ Active workflow not found\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        context.user_data.pop('active_workflow', None)
+        return USER_MAIN
+    
+    workflow = workflow_metadata.get("workflow", workflow_metadata)  # Handle both old and new formats
+    credits_needed = calculate_workflow_credits(workflow)
+    
+    # Check credits for workflow execution (dynamic based on steps)
+    if not use_multiple_credits(user_id, credits_needed):
+        await update.message.reply_text(f"🚫 You need at least {credits_needed} credits to run this agent. Please redeem a code or wait for your daily refill.")
+        context.user_data.pop('active_workflow', None)
+        return await start_command(update, context)
+    
+    # Determine file type and handle accordingly
+    file_type = None
+    file_path = None
+    
+    if update.message.photo:
+        file_type = "photo"
+        await update.message.reply_text("🚀 Photo received\\! Starting the agent workflow\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        photo_file = await update.message.photo[-1].get_file()
+        file_path = os.path.join(TEMP_DIR, f"workflow_{uuid.uuid4()}.jpg")
+        await photo_file.download_to_drive(file_path)
+        
+    elif update.message.video:
+        file_type = "video"
+        await update.message.reply_text("🚀 Video received\\! Starting the agent workflow\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        video_file = await update.message.video.get_file()
+        file_path = os.path.join(TEMP_DIR, f"workflow_{uuid.uuid4()}.mp4")
+        await video_file.download_to_drive(file_path)
+        
+    elif update.message.audio or update.message.voice:
+        file_type = "audio"
+        await update.message.reply_text("🚀 Audio file received\\! Starting the agent workflow\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        audio_file = await (update.message.audio or update.message.voice).get_file()
+        file_path = os.path.join(TEMP_DIR, f"workflow_{uuid.uuid4()}.ogg")
+        await audio_file.download_to_drive(file_path)
+        
+    else:
+        await update.message.reply_text("❌ Unsupported file type\\. Please send a photo, video, or audio file\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    try:
+        await execute_workflow(workflow, "", update.message.chat_id, context, initial_file_path=file_path)
+        context.user_data.pop('active_workflow', None)
+    except Exception as e:
+        refund_multiple_credits(user_id, credits_needed)  # Refund on error
+        logger.error(f"Error executing workflow: {e}")
+        await update.message.reply_text("❌ An error occurred while running the agent. Credits have been refunded.")
+        context.user_data.pop('active_workflow', None)
+    
+    return USER_MAIN
+
+# ========== WORKFLOW PRIVACY & MARKETPLACE HANDLERS ==========
+
+async def workflow_privacy_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle workflow privacy settings."""
+    query = update.callback_query
+    await query.answer()
+    action = query.data.split("_")[-1]
+    user_id = update.effective_user.id
+    workflow_name = context.user_data.get('current_workflow_name')
+    
+    if not workflow_name:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    user_workflows = load_workflows(user_id)
+    workflow_metadata = user_workflows[workflow_name]
+    
+    if action == "private":
+        workflow_metadata["is_public"] = False
+        save_workflows(user_id, user_workflows)
+        context.user_data.pop('current_workflow_name', None)
+        await safe_edit_message(query, f"✅ Agent '{escape_markdown_v2(workflow_name)}' is now **private**\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]), parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    elif action == "public":
+        workflow_metadata["is_public"] = True
+        save_workflows(user_id, user_workflows)
+        
+        # Ask about pricing
+        keyboard = [
+            [InlineKeyboardButton("🆓 Free", callback_data="price_free")],
+            [InlineKeyboardButton("💰 Set Price", callback_data="price_paid")],
+            [InlineKeyboardButton("⏭️ Skip Pricing", callback_data="price_skip")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await safe_edit_message(
+            query,
+            f"✅ Agent '{escape_markdown_v2(workflow_name)}' is now **public**\\!\n\n💰 Would you like to set a price for your agent?",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return WORKFLOW_PRICING_SETTINGS
+    
+    # Handle pricing callbacks
+    elif action == "free":
+        workflow_metadata["price"] = 0
+        save_workflows(user_id, user_workflows)
+        
+        # Add to marketplace if public
+        if workflow_metadata.get("is_public", False):
+            marketplace_workflows = load_marketplace_workflows()
+            workflow_id = f"{user_id}_{workflow_name}"
+            marketplace_workflows[workflow_id] = {
+                'name': workflow_name,
+                'workflow': workflow_metadata.get('workflow', workflow_metadata),
+                'creator_id': user_id,
+                'price': 0,
+                'downloads': 0,
+                'rating': 0.0,
+                'ratings_count': 0
+            }
+            save_marketplace_workflows(marketplace_workflows)
+        
+        context.user_data.pop('current_workflow_name', None)
+        await safe_edit_message(query, f"✅ Agent '{escape_markdown_v2(workflow_name)}' is now **public and free**\\!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]), parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    elif action == "paid":
+        # This will be handled by the price input handler
+        await safe_edit_message(
+            query,
+            f"💰 **Set Price for '{escape_markdown_v2(workflow_name)}'**\n\nEnter the price \\(0\\-100 credits\\):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="privacy_skip")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return WORKFLOW_PRICING_SETTINGS
+    
+    elif action == "skip":
+        context.user_data.pop('current_workflow_name', None)
+        await safe_edit_message(query, "✅ Agent saved with default settings\\!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+
+async def workflow_price_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle price input for workflow."""
+    user_id = update.effective_user.id
+    price_text = update.message.text.strip()
+    workflow_name = context.user_data.get('current_workflow_name')
+    
+    if not workflow_name:
+        await update.message.reply_text("❌ No workflow selected\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    try:
+        price = int(price_text)
+        if price < 0 or price > 100:
+            await update.message.reply_text("❌ Price must be between 0 and 100 credits\\. Please try again\\.")
+            return WORKFLOW_PRICING_SETTINGS
+    except ValueError:
+        await update.message.reply_text("❌ Please enter a valid number for the price\\.")
+        return WORKFLOW_PRICING_SETTINGS
+    
+    user_workflows = load_workflows(user_id)
+    if workflow_name not in user_workflows:
+        await update.message.reply_text("❌ Workflow not found\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    if isinstance(workflow_metadata, dict):
+        workflow_metadata['price'] = price
+    else:
+        # Convert old format to new format
+        user_workflows[workflow_name] = {
+            'workflow': workflow_metadata,
+            'creator_id': user_id,
+            'is_public': True,
+            'price': price
+        }
+    
+    save_workflows(user_id, user_workflows)
+    
+    # Update marketplace if public
+    if isinstance(workflow_metadata, dict) and workflow_metadata.get('is_public', False):
+        marketplace_workflows = load_marketplace_workflows()
+        workflow_id = f"{user_id}_{workflow_name}"
+        if workflow_id in marketplace_workflows:
+            marketplace_workflows[workflow_id]['price'] = price
+            save_marketplace_workflows(marketplace_workflows)
+    
+    context.user_data.pop('current_workflow_name', None)
+    
+    price_text = "🆓 Free" if price == 0 else f"💰 {price} credits"
+    await update.message.reply_text(
+        f"✅ Agent '{escape_markdown_v2(workflow_name)}' price set to {price_text}\\!",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return USER_MAIN
+
+async def toggle_privacy_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle toggling workflow privacy."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    if isinstance(workflow_metadata, dict):
+        current_public = workflow_metadata.get('is_public', False)
+        workflow_metadata['is_public'] = not current_public
+        is_public = workflow_metadata['is_public']
+    else:
+        # Convert old format to new format
+        user_workflows[workflow_name] = {
+            'workflow': workflow_metadata,
+            'creator_id': user_id,
+            'is_public': True,
+            'price': 0
+        }
+        is_public = True
+    
+    save_workflows(user_id, user_workflows)
+    
+    # Update marketplace
+    marketplace_workflows = load_marketplace_workflows()
+    workflow_id = f"{user_id}_{workflow_name}"
+    
+    if is_public:
+        if workflow_id not in marketplace_workflows:
+            marketplace_workflows[workflow_id] = {
+                'name': workflow_name,
+                'workflow': workflow_metadata.get('workflow', workflow_metadata),
+                'creator_id': user_id,
+                'price': workflow_metadata.get('price', 0),
+                'downloads': 0,
+                'rating': 0.0,
+                'ratings_count': 0
+            }
+    else:
+        if workflow_id in marketplace_workflows:
+            del marketplace_workflows[workflow_id]
+    
+    save_marketplace_workflows(marketplace_workflows)
+    
+    status_text = "🌐 Public" if is_public else "🔒 Private"
+    await safe_edit_message(
+        query,
+        f"✅ Agent '{escape_markdown_v2(workflow_name)}' is now {status_text}\\!",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return USER_MAIN
+
+async def change_price_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle changing workflow price."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    current_price = workflow_metadata.get('price', 0) if isinstance(workflow_metadata, dict) else 0
+    
+    context.user_data['current_workflow_name'] = workflow_name
+    
+    await safe_edit_message(
+        query,
+        f"💰 **Set Price for '{escape_markdown_v2(workflow_name)}'**\n\n"
+        f"Current price: {current_price} credits\n\n"
+        f"Enter the new price \\(0\\-100 credits\\):",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"edit_workflow:{workflow_name}")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return WORKFLOW_PRICING_SETTINGS
+
+async def edit_description_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle editing workflow description."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    current_description = workflow_metadata.get('description', '') if isinstance(workflow_metadata, dict) else ''
+    
+    context.user_data['current_workflow_name'] = workflow_name
+    
+    await safe_edit_message(
+        query,
+        f"✏️ **Edit Description for '{escape_markdown_v2(workflow_name)}'**\n\n"
+        f"Current description: {escape_markdown_v2(current_description) if current_description else 'None'}\n\n"
+        f"Enter the new description:",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"edit_workflow:{workflow_name}")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return EDIT_WORKFLOW_DESCRIPTION
+
+async def workflow_description_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle description input for workflow."""
+    user_id = update.effective_user.id
+    description = update.message.text.strip()
+    workflow_name = context.user_data.get('current_workflow_name')
+    
+    if not workflow_name:
+        await update.message.reply_text("❌ No workflow selected\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    user_workflows = load_workflows(user_id)
+    if workflow_name not in user_workflows:
+        await update.message.reply_text("❌ Workflow not found\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    if isinstance(workflow_metadata, dict):
+        workflow_metadata['description'] = description
+    else:
+        # Convert old format to new format
+        user_workflows[workflow_name] = {
+            'workflow': workflow_metadata,
+            'creator_id': user_id,
+            'is_public': False,
+            'price': 0,
+            'description': description
+        }
+    
+    save_workflows(user_id, user_workflows)
+    
+    context.user_data.pop('current_workflow_name', None)
+    
+    await update.message.reply_text(
+        f"✅ Description for agent '{escape_markdown_v2(workflow_name)}' updated\\!",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return USER_MAIN
+
+async def edit_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle workflow editing."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = user_workflows[workflow_name]
+    is_public = workflow_metadata.get("is_public", False) if isinstance(workflow_metadata, dict) else False
+    price = workflow_metadata.get("price", 0) if isinstance(workflow_metadata, dict) else 0
+    
+    # Create edit options
+    keyboard = [
+        [InlineKeyboardButton("🔒 Toggle Privacy", callback_data=f"toggle_privacy:{workflow_name}")],
+        [InlineKeyboardButton("💰 Change Price", callback_data=f"change_price:{workflow_name}")],
+        [InlineKeyboardButton("✏️ Edit Description", callback_data=f"edit_desc:{workflow_name}")],
+        [InlineKeyboardButton("🤖 AI Edit", callback_data=f"ai_edit:{workflow_name}")],
+        [InlineKeyboardButton("⬅️ Back to Library", callback_data="act_list_workflows")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    privacy_text = "🌐 Public" if is_public else "🔒 Private"
+    price_text = f"💰 {price} credits" if price > 0 else "🆓 Free"
+    
+    text = (f"✏️ **Edit Agent: '{escape_markdown_v2(workflow_name)}'**\n\n"
+            f"**Current Settings:**\n"
+            f"Privacy\\: {privacy_text}\n"
+            f"Price\\: {price_text}\n\n"
+            f"What would you like to edit?")
+    
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return USER_MAIN
+
+async def ai_edit_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle AI-powered workflow editing."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Store the workflow name in context for later use
+    context.user_data['current_workflow_name'] = workflow_name
+    
+    text = (f"🤖 **AI Edit: '{escape_markdown_v2(workflow_name)}'**\n\n"
+            f"Describe what changes you'd like to make to your workflow\\. You can:\n\n"
+            f"• Change the workflow logic or steps\n"
+            f"• Modify parameters and settings\n"
+            f"• Add or remove functionality\n"
+            f"• Update prompts or descriptions\n"
+            f"• Change output formats\n\n"
+            f"**Examples:**\n"
+            f"\\- \"Make the output more creative\"\n"
+            f"\\- \"Add a step to generate a summary\"\n"
+            f"\\- \"Change video aspect ratio to 16:9\"\n"
+            f"\\- \"Make the prompts more detailed\"\n\n"
+            f"💭 **What changes would you like to make?**")
+    
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data=f"edit_workflow:{workflow_name}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return AWAITING_AI_EDIT_INSTRUCTIONS
+
+async def ai_edit_workflow_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Process AI edit instructions for workflow."""
+    user_id = update.effective_user.id
+    edit_instructions = update.message.text.strip()
+    workflow_name = context.user_data.get('current_workflow_name')
+    
+    if not workflow_name:
+        await update.message.reply_text("❌ No workflow selected\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    user_workflows = load_workflows(user_id)
+    if workflow_name not in user_workflows:
+        await update.message.reply_text("❌ Workflow not found\\. Please try again\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    # Check credits
+    if not check_and_use_credit(user_id):
+        await update.message.reply_text("🚫 You need at least 1 credit to use AI editing\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    processing_message = await update.message.reply_text("🤖 AI is analyzing and editing your workflow\\.\\.\\.")
+    
+    try:
+        workflow_metadata = user_workflows[workflow_name]
+        current_workflow = workflow_metadata.get('workflow', workflow_metadata) if isinstance(workflow_metadata, dict) else workflow_metadata
+        
+        # Create edit prompt for AI
+        workflow_json = json.dumps(current_workflow, indent=2)
+        edit_prompt = f"""You are an AI workflow editor. Please modify the following workflow JSON based on the user's instructions.
+
+Current Workflow:
+{workflow_json}
+
+User's Edit Instructions: {edit_instructions}
+
+Please return ONLY the modified JSON workflow with the same structure but incorporating the user's requested changes. Make sure the JSON is valid and maintains the workflow format.
+
+Important guidelines:
+- Keep the same overall structure and format
+- Ensure all required fields are present
+- Make changes that align with the user's instructions
+- If adding new steps, use appropriate step types and parameters
+- Maintain consistency with existing workflow patterns
+
+Here are the available model types and their parameters:
+
+1.  `"type": "chat"`
+    - `model`: (string) Model name.
+    - `prompt_template`: (string) The prompt to send. Use `{variable_name}` for placeholders.
+    - `output_variable`: (string) The name to store the text output.
+    - Available Models: "provider-3/gpt-4", "provider-3/gpt-4.1-mini", "provider-6/o4-mini-high", "provider-6/o4-mini-low", "provider-6/o3-high", "provider-6/o3-medium", "provider-6/o3-low", "provider-3/gpt-4o-mini-search-preview", "provider-6/gpt-4o", "provider-6/gpt-4.1-nano", "provider-6/gpt-4.1-mini", "provider-3/gpt-4.1-nano", "provider-6/o4-mini-medium", "provider-1/deepseek-v3-0324", "provider-6/minimax-m1-40k", "provider-6/kimi-k2", "provider-3/kimi-k2", "provider-6/qwen3-coder-480b-a35b", "provider-3/llama-3.1-405b", "provider-3/qwen-3-235b-a22b-2507", "provider-6/gemini-2.5-flash-thinking", "provider-6/gemini-2.5-flash", "provider-1/llama-3.1-405b-instruct-turbo", "provider-3/llama-3.1-70b", "provider-3/qwen-2.5-coder-32b", "provider-6/kimi-k2-instruct", "provider-6/r1-1776", "provider-6/deepseek-r1-uncensored", "provider-1/deepseek-r1-0528"
+
+2.  `"type": "image_generation"`
+    - `output_variable`: (string) The name to store the output image URL.
+    - `prompt_from`: (string) Variable containing the prompt text.
+    - **Standard Models (Support `n` and `size`):**
+        - `model`: (string) One of: "provider-4/imagen-3", "provider-3/FLUX.1-schnell", "provider-1/FLUX.1-schnell", "provider-2/FLUX.1-schnell-v2", "provider-6/sana-1.5", "provider-6/sana-1.5-flash"
+        - `n`: (integer, optional) Number of images.
+        - `size`: (string, optional) e.g., "1024x1024", "1792x1024", "1024x1792".
+    - **Advanced FLUX Models (Do NOT use `n` parameter):**
+        - `model`: (string) One of: "provider-6/FLUX.1-kontext-max", "provider-6/FLUX.1-kontext-pro", "provider-6/FLUX.1-kontext-dev", "provider-3/FLUX.1-dev", "provider-6/FLUX.1-dev", "provider-1/FLUX.1.1-pro", "provider-6/FLUX.1-pro", "provider-1/FLUX.1-kontext-pro", "provider-6/FLUX.1-1-pro"
+        - `size`: (string, optional) e.g., "1024x1024", "1792x1024", "1024x1792".
+
+3.  `"type": "image_edit"`
+    - `model`: (string) Model name.
+    - `prompt_from`: (string) Variable containing the edit instruction.
+    - `image_from`: (string) Variable containing the URL of the image to edit.
+    - `output_variable`: (string) The name to store the edited image URL.
+    - Available Models: "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-max"
+
+4.  `"type": "video_generation"`
+    - `model`: (string) Model name.
+    - `prompt_from`: (string) Variable containing the prompt text.
+    - `ratio`: (string) e.g., "9:16", "16:9".
+    - `duration`: (integer, optional, default: 4) Max 4.
+    - `quality`: (string, optional, default: "480p") Max "480p".
+    - `output_variable`: (string) The name to store the output video URL.
+    - Available Models: "provider-6/wan-2.1"
+
+5.  `"type": "tts"`
+    - `model`: (string) Model name.
+    - `input_from`: (string) Variable containing the text to convert to speech.
+    - `voice`: (string) One of: alloy, echo, fable, onyx, nova, shimmer.
+    - `output_variable`: (string) The name to store the output audio file path.
+    - Available Models: "provider-3/tts-1", "provider-6/sonic-2", "provider-6/sonic"
+
+6.  `"type": "transcription"`
+    - `model`: (string) Model name.
+    - `file_path_from`: (string) Variable containing the path of the audio file to transcribe (e.g., `{initial_file_path}`).
+    - `output_variable`: (string) The name to store the transcribed text.
+    - Available Models: "provider-2/whisper-1", "provider-6/distil-whisper-large-v3-en"
+
+7.  `"type": "custom_api"`
+    - `url`: (string) The endpoint URL.
+    - `method`: (string) "POST", "GET", etc.
+    - `headers`: (dict) e.g., {"Authorization": "Bearer {api_key_variable}", "Content-Type": "application/json"}.
+    - `body_template`: (dict/string) The request body as a JSON template.
+    - `output_variable`: (string) The name to store the result.
+    - `output_parser_path`: (string, optional) e.g., "choices.0.message.content".
+
+    must use this models only for predefined model edits no new model should be added like if the usert says whisper1 you should use provider-3/whisper-1 and not provider-2/whisper-1 or provider3/whisper1."""
+
+        # Use the workflow designer model for AI editing
+        api_key = get_random_api_key()
+        if not api_key:
+            await processing_message.edit_text("❌ No API key available\\. Please try again later\\.")
+            refund_credit(user_id)
+            return USER_MAIN
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        json_data = {
+            "model": WORKFLOW_DESIGNER_MODEL,
+            "messages": [{"role": "user", "content": edit_prompt}],
+            "max_tokens": 4000,
+            "temperature": 0.3
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await make_api_request_with_retry(
+                client, f"{A4F_API_BASE_URL}/chat/completions", headers, json_data=json_data, timeout=120
+            )
+            result = response.json()
+            
+            if 'choices' in result and len(result['choices']) > 0:
+                edited_content = result['choices'][0]['message']['content'].strip()
+                
+                # Try to extract JSON from the response
+                try:
+                    # Remove any markdown code block formatting
+                    if edited_content.startswith('```'):
+                        edited_content = edited_content.split('```')[1]
+                        if edited_content.startswith('json'):
+                            edited_content = edited_content[4:]
+                    edited_content = edited_content.strip()
+                    
+                    edited_workflow = json.loads(edited_content)
+                    
+                    # Update the workflow
+                    if isinstance(workflow_metadata, dict):
+                        workflow_metadata['workflow'] = edited_workflow
+                        # Add edit history if not exists
+                        if 'edit_history' not in workflow_metadata:
+                            workflow_metadata['edit_history'] = []
+                        workflow_metadata['edit_history'].append({
+                            'timestamp': datetime.now().isoformat(),
+                            'instructions': edit_instructions,
+                            'type': 'ai_edit'
+                        })
+                    else:
+                        # Convert old format to new format
+                        user_workflows[workflow_name] = {
+                            'workflow': edited_workflow,
+                            'creator_id': user_id,
+                            'is_public': False,
+                            'price': 0,
+                            'edit_history': [{
+                                'timestamp': datetime.now().isoformat(),
+                                'instructions': edit_instructions,
+                                'type': 'ai_edit'
+                            }]
+                        }
+                    
+                    save_workflows(user_id, user_workflows)
+                    
+                    await processing_message.delete()
+                    
+                    success_text = (f"✅ **Workflow '{escape_markdown_v2(workflow_name)}' successfully edited\\!**\n\n"
+                                  f"🎯 **Applied changes:** {escape_markdown_v2(edit_instructions)}\n\n"
+                                  f"The workflow has been updated and is ready to use\\. You can find it in your agents library\\.")
+                    
+                    keyboard = [
+                        [InlineKeyboardButton("▶️ Run Workflow", callback_data=f"select_workflow:{workflow_name}")],
+                        [InlineKeyboardButton("✏️ Edit Again", callback_data=f"ai_edit:{workflow_name}")],
+                        [InlineKeyboardButton("📚 View Library", callback_data="act_list_workflows")],
+                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    await update.message.reply_text(success_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                    return USER_MAIN
+                    
+                except json.JSONDecodeError:
+                    await processing_message.edit_text("❌ Failed to parse the edited workflow\\. Please try again with clearer instructions\\.")
+                    refund_credit(user_id)
+                    return AWAITING_AI_EDIT_INSTRUCTIONS
+            else:
+                await processing_message.edit_text("❌ Failed to edit workflow\\. Please try again\\.")
+                refund_credit(user_id)
+                return AWAITING_AI_EDIT_INSTRUCTIONS
+                
+    except Exception as e:
+        logger.error(f"Error in AI workflow editing: {e}")
+        await processing_message.edit_text("❌ An error occurred while editing the workflow\\. Please try again\\.")
+        refund_credit(user_id)
+        return AWAITING_AI_EDIT_INSTRUCTIONS
+
+async def delete_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle workflow deletion."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name not in user_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Create confirmation buttons
+    keyboard = [
+        [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete:{workflow_name}")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="act_list_workflows")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = (f"🗑️ **Delete Agent: '{escape_markdown_v2(workflow_name)}'**\n\n"
+            f"⚠️ This action cannot be undone\\!\n\n"
+            f"Are you sure you want to delete this agent?")
+    
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return USER_MAIN
+
+async def confirm_delete_workflow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Confirm and execute workflow deletion."""
+    query = update.callback_query
+    await query.answer()
+    workflow_name = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    user_workflows = load_workflows(user_id)
+    
+    if workflow_name in user_workflows:
+        # Check if it's public and remove from marketplace
+        workflow_metadata = user_workflows[workflow_name]
+        if isinstance(workflow_metadata, dict) and workflow_metadata.get("is_public", False):
+            # Find and remove from marketplace
+            marketplace_workflows = load_marketplace_workflows()
+            to_remove = []
+            for workflow_id, market_metadata in marketplace_workflows.items():
+                if market_metadata.get("creator_id") == user_id and market_metadata.get("name") == workflow_name:
+                    to_remove.append(workflow_id)
+            
+            for workflow_id in to_remove:
+                remove_workflow_from_marketplace(workflow_id)
+        
+        # Remove from user's workflows
+        del user_workflows[workflow_name]
+        save_workflows(user_id, user_workflows)
+        
+        await safe_edit_message(
+            query,
+            f"✅ Agent '{escape_markdown_v2(workflow_name)}' has been deleted\\.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📚 Back to Library", callback_data="act_list_workflows")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+    else:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+    
+    return USER_MAIN
+
+async def marketplace_browse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Browse the marketplace of public workflows."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    
+    marketplace_workflows = load_marketplace_workflows()
+    
+    if not marketplace_workflows:
+        text = "🏪 **Agent Hub**\n\nNo public agents available yet\\. Be the first to publish one\\!"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Create Agent", callback_data="act_create_workflow")], [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
+        await safe_edit_message(query, text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    keyboard = []
+    for workflow_id, workflow_metadata in list(marketplace_workflows.items())[:10]:  # Show first 10
+        name = workflow_metadata.get("name", "Unnamed")
+        price = workflow_metadata.get("price", 0)
+        downloads = workflow_metadata.get("downloads", 0)
+        price_text = "🆓 Free" if price == 0 else f"💰 {price}c"
+        button_text = f"{name} ({price_text}) - {downloads} downloads"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"market_view:{workflow_id}")])
+        
+        # Add install/buy buttons
+        if price == 0:
+            keyboard.append([InlineKeyboardButton(f"📥 Install '{name}'", callback_data=f"install:{workflow_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton(f"💰 Buy '{name}' ({price}c)", callback_data=f"buy:{workflow_id}")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = "🏪 **Agent Hub**\n\nDiscover and install public agents created by the community\\!"
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return MARKETPLACE_BROWSE
+
+async def list_owned_workflows(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """List workflows owned/downloaded by the user."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    
+    owned_workflows = load_user_owned_workflows(user_id)
+    
+    if not owned_workflows:
+        text = "💼 You haven't downloaded any agents from the Agent Hub yet\\.\n\nVisit the Agent Hub to discover amazing agents\\!"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏪 Agent Hub", callback_data="act_marketplace")], [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]])
+        await safe_edit_message(query, text, reply_markup=markup, parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    
+    keyboard = []
+    for workflow_id in owned_workflows:
+        # Try to load workflow from marketplace
+        marketplace_workflows = load_marketplace_workflows()
+        if workflow_id in marketplace_workflows:
+            workflow_metadata = marketplace_workflows[workflow_id]
+            name = workflow_metadata.get("name", "Unnamed")
+            keyboard.append([InlineKeyboardButton(f"▶️ Run '{name}'", callback_data=f"run_owned:{workflow_id}")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="main_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = "💼 **My Owned Agents**\n\nThese are agents you've downloaded from the Agent Hub\\."
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return USER_MAIN
+
+async def handle_marketplace_workflow_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle input for marketplace workflows."""
+    active_workflow_id = context.user_data.get('active_marketplace_workflow')
+    if not active_workflow_id:
+        return USER_MAIN
+    
+    user_id = update.effective_user.id
+    
+    # Check ownership
+    owned_workflows = load_user_owned_workflows(user_id)
+    if active_workflow_id not in owned_workflows and not is_admin(user_id):
+        await update.message.reply_text("❌ You don't own this agent\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        context.user_data.pop('active_marketplace_workflow', None)
+        return USER_MAIN
+    
+    # Load from marketplace
+    marketplace_workflows = load_marketplace_workflows()
+    if active_workflow_id not in marketplace_workflows:
+        await update.message.reply_text("❌ Workflow not found\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        context.user_data.pop('active_marketplace_workflow', None)
+        return USER_MAIN
+    
+    workflow_metadata = marketplace_workflows[active_workflow_id]
+    workflow = workflow_metadata.get("workflow", {})
+    credits_needed = calculate_workflow_credits(workflow)
+    
+    # Check credits
+    if not use_multiple_credits(user_id, credits_needed):
+        await update.message.reply_text(f"🚫 You need at least {credits_needed} credits to run this agent. Please redeem a code or wait for your daily refill.")
+        context.user_data.pop('active_marketplace_workflow', None)
+        return await start_command(update, context)
+    
+    await update.message.reply_text("🚀 Input received\\! Starting the agent workflow\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+    
+    try:
+        # Handle both text and file input
+        if update.message.text:
+            await execute_workflow(workflow, update.message.text, update.message.chat_id, context)
+        elif update.message.audio or update.message.voice:
+            audio_file = await (update.message.audio or update.message.voice).get_file()
+            file_path = os.path.join(TEMP_DIR, f"marketplace_workflow_{uuid.uuid4()}")
+            await audio_file.download_to_drive(file_path)
+            await execute_workflow(workflow, "", update.message.chat_id, context, initial_file_path=file_path)
+        
+        context.user_data.pop('active_marketplace_workflow', None)
+    except Exception as e:
+        refund_multiple_credits(user_id, credits_needed)
+        logger.error(f"Error executing marketplace workflow: {e}")
+        await update.message.reply_text("❌ An error occurred while running the agent. Credits have been refunded.")
+        context.user_data.pop('active_marketplace_workflow', None)
+    
+    return USER_MAIN
+
+async def marketplace_view_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle viewing marketplace workflow details."""
+    query = update.callback_query
+    await query.answer()
+    workflow_id = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    marketplace_workflows = load_marketplace_workflows()
+    if workflow_id not in marketplace_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = marketplace_workflows[workflow_id]
+    name = workflow_metadata.get("name", "Unnamed")
+    description = workflow_metadata.get("description", "No description available")
+    price = workflow_metadata.get("price", 0)
+    downloads = workflow_metadata.get("downloads", 0)
+    creator_id = workflow_metadata.get("creator_id", "Unknown")
+    
+    # Check if user already owns this workflow
+    owned_workflows = load_user_owned_workflows(user_id)
+    already_owned = workflow_id in owned_workflows
+    
+    price_text = "🆓 Free" if price == 0 else f"💰 {price} credits"
+    owned_text = "✅ You own this workflow" if already_owned else ""
+    
+    text = (f"🏪 **Agent Details**\n\n"
+            f"**Name:** {escape_markdown_v2(name)}\n"
+            f"**Price:** {escape_markdown_v2(price_text)}\n"
+            f"**Downloads:** {downloads}\n"
+            f"**Description:** {escape_markdown_v2(description)}\n\n"
+            f"{escape_markdown_v2(owned_text)}")
+    
+    keyboard = []
+    if not already_owned:
+        if price == 0:
+            keyboard.append([InlineKeyboardButton(f"📥 Install '{name}'", callback_data=f"install:{workflow_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton(f"💰 Buy '{name}' ({price}c)", callback_data=f"buy:{workflow_id}")])
+    else:
+        keyboard.append([InlineKeyboardButton(f"▶️ Run '{name}'", callback_data=f"run_owned:{workflow_id}")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Agent Hub", callback_data="act_marketplace")])
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await safe_edit_message(query, text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+    return USER_MAIN
+
+async def install_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle installing free workflows from marketplace."""
+    query = update.callback_query
+    await query.answer()
+    workflow_id = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    marketplace_workflows = load_marketplace_workflows()
+    if workflow_id not in marketplace_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = marketplace_workflows[workflow_id]
+    price = workflow_metadata.get("price", 0)
+    
+    if price > 0:
+        await safe_edit_message(query, "❌ This workflow is not free\\. Use the Buy button instead\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Check if user already owns this workflow
+    owned_workflows = load_user_owned_workflows(user_id)
+    if workflow_id in owned_workflows:
+        await safe_edit_message(query, "✅ You already own this workflow\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Add to owned workflows
+    owned_workflows.append(workflow_id)
+    save_user_owned_workflows(user_id, owned_workflows)
+    
+    # Update download count
+    workflow_metadata["downloads"] = workflow_metadata.get("downloads", 0) + 1
+    marketplace_workflows[workflow_id] = workflow_metadata
+    save_marketplace_workflows(marketplace_workflows)
+    
+    name = workflow_metadata.get("name", "Unnamed")
+    await safe_edit_message(
+        query, 
+        f"✅ Successfully installed '{escape_markdown_v2(name)}'\\!\n\nYou can now find it in 'My Owned Agents'\\.", 
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return USER_MAIN
+
+async def buy_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle buying paid workflows from marketplace."""
+    query = update.callback_query
+    await query.answer()
+    workflow_id = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    marketplace_workflows = load_marketplace_workflows()
+    if workflow_id not in marketplace_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = marketplace_workflows[workflow_id]
+    price = workflow_metadata.get("price", 0)
+    name = workflow_metadata.get("name", "Unnamed")
+    
+    if price == 0:
+        await safe_edit_message(query, "❌ This workflow is free\\. Use the Install button instead\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Check if user already owns this workflow
+    owned_workflows = load_user_owned_workflows(user_id)
+    if workflow_id in owned_workflows:
+        await safe_edit_message(query, "✅ You already own this workflow\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Check if user has enough credits
+    user_data = load_user_data(user_id)
+    user_credits = user_data.get("credits", 0)
+    
+    if user_credits < price:
+        await safe_edit_message(
+            query, 
+            f"❌ You don't have enough credits\\. You need {price} credits but have {user_credits}\\.", 
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+            parse_mode=ParseMode.MARKDOWN_V2
+        )
+        return USER_MAIN
+    
+    # Deduct credits and add to owned workflows
+    user_data["credits"] = user_credits - price
+    save_user_data(user_id, user_data)
+    
+    owned_workflows.append(workflow_id)
+    save_user_owned_workflows(user_id, owned_workflows)
+    
+    # Update download count
+    workflow_metadata["downloads"] = workflow_metadata.get("downloads", 0) + 1
+    marketplace_workflows[workflow_id] = workflow_metadata
+    save_marketplace_workflows(marketplace_workflows)
+    
+    await safe_edit_message(
+        query, 
+        f"✅ Successfully purchased '{escape_markdown_v2(name)}' for {price} credits\\!\n\nYou can now find it in 'My Owned Agents'\\.", 
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]),
+        parse_mode=ParseMode.MARKDOWN_V2
+    )
+    return USER_MAIN
+
+async def run_owned_workflow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle running owned marketplace workflows."""
+    query = update.callback_query
+    await query.answer()
+    workflow_id = query.data.split(":")[1]
+    user_id = update.effective_user.id
+    
+    # Check ownership
+    owned_workflows = load_user_owned_workflows(user_id)
+    if workflow_id not in owned_workflows:
+        await safe_edit_message(query, "❌ You don't own this workflow\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    # Load from marketplace
+    marketplace_workflows = load_marketplace_workflows()
+    if workflow_id not in marketplace_workflows:
+        await safe_edit_message(query, "❌ Workflow not found\\.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]))
+        return USER_MAIN
+    
+    workflow_metadata = marketplace_workflows[workflow_id]
+    workflow = workflow_metadata.get("workflow", {})
+    name = workflow_metadata.get("name", "Unnamed")
+    
+    context.user_data['active_marketplace_workflow'] = workflow_id
+    
+    # Calculate credits needed based on workflow steps
+    credits_needed = calculate_workflow_credits(workflow)
+    
+    if workflow.get("requires_input", True):
+        prompt_text = (f"🎬 **Agent Activated: '{escape_markdown_v2(name)}'**\n\n"
+                      f"💰 *Running this agent will cost {credits_needed} credits*\n\n"
+                      f"This agent is now active\\. Please provide the input to start the workflow \\(e\\.g\\., text or an audio file\\)\\.")
+        keyboard = [[InlineKeyboardButton("⬅️ Exit to Main Menu", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(query, prompt_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+        return USER_MAIN
+    else:
+        await safe_edit_message(query, f"🎬 **Agent Activated: '{escape_markdown_v2(name)}'**\n\nThis agent does not require input\\. Starting automatically\\.\\.\\.", parse_mode=ParseMode.MARKDOWN_V2)
+        
+        # Check credits for workflow execution (dynamic based on steps)
+        if not use_multiple_credits(user_id, credits_needed):
+            await query.message.reply_text(f"🚫 You need at least {credits_needed} credits to run this agent. Please redeem a code or wait for your daily refill.")
+            return USER_MAIN
+        
+        try:
+            await execute_workflow(workflow, "", query.message.chat_id, context)
+        except Exception as e:
+            refund_multiple_credits(user_id, credits_needed)  # Refund on error
+            logger.error(f"Error executing marketplace workflow: {e}")
+            await query.message.reply_text("❌ An error occurred while running the agent. Credits have been refunded.")
+        
+        return USER_MAIN
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not is_admin(update.effective_user.id):
@@ -2069,7 +4376,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
         tb_string = "".join(tb_list)
-        with open(ERROR_LOG_FILE, 'a') as f:
+        with open(ERROR_LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(f"--- Time: {datetime.now()} ---\n")
             f.write(f"Update: {update}\n")
             if context.user_data:
@@ -2081,11 +4388,37 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         try: await update.effective_message.reply_text("An unexpected error occurred. The admin has been notified and the issue has been logged.")
         except Exception as e: logger.error(f"Failed to send error message to user: {e}")
 
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    logger.info(f"Received signal {signum}, shutting down gracefully...")
+    if 'mongo_client' in globals() and mongo_client:
+        try:
+            mongo_client.close()
+            logger.info("MongoDB connection closed")
+        except Exception as e:
+            logger.error(f"Error closing MongoDB connection: {e}")
+    sys.exit(0)
+
 def main() -> None:
-    setup_data_directory()
-    if not TELEGRAM_BOT_TOKEN: logger.critical("TOKEN not set!"); return
-    if not INITIAL_A4F_KEYS: logger.critical("API KEYS not set!"); return
-    if not ADMIN_CHAT_ID: logger.warning("ADMIN_CHAT_ID not set!");
+    # Set up signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Add timeout protection for setup
+    try:
+        setup_data_directory()
+    except Exception as e:
+        logger.error(f"Error during setup: {e}")
+        # Continue anyway, the bot can work with file system fallback
+    
+    if not TELEGRAM_BOT_TOKEN: 
+        logger.critical("TOKEN not set!")
+        return
+    if not INITIAL_A4F_KEYS: 
+        logger.critical("API KEYS not set!")
+        return
+    if not ADMIN_CHAT_ID: 
+        logger.warning("ADMIN_CHAT_ID not set!")
     request = HTTPXRequest(read_timeout=60.0, write_timeout=60.0, connect_timeout=30.0, pool_timeout=60.0)
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).concurrent_updates(True).request(request).build()
     conv_handler = ConversationHandler(
@@ -2098,7 +4431,23 @@ def main() -> None:
         states={
             USER_MAIN: [
                 CallbackQueryHandler(action_handler, pattern="^act_"),
-                CallbackQueryHandler(start_command, pattern="^main_menu$")
+                CallbackQueryHandler(start_command, pattern="^main_menu$"),
+                CallbackQueryHandler(select_workflow, pattern="^select_workflow:"),
+                CallbackQueryHandler(marketplace_browse, pattern="^market_view:"),
+                CallbackQueryHandler(run_owned_workflow_handler, pattern="^run_owned:"),
+                CallbackQueryHandler(install_workflow_handler, pattern="^install:"),
+                CallbackQueryHandler(buy_workflow_handler, pattern="^buy:"),
+                CallbackQueryHandler(edit_workflow_handler, pattern="^edit_workflow:"),
+                CallbackQueryHandler(ai_edit_workflow_handler, pattern="^ai_edit:"),
+                CallbackQueryHandler(edit_history_handler, pattern="^edit_history:"),
+                CallbackQueryHandler(delete_workflow_handler, pattern="^delete_workflow:"),
+                CallbackQueryHandler(confirm_delete_workflow, pattern="^confirm_delete:"),
+                CallbackQueryHandler(toggle_privacy_handler, pattern="^toggle_privacy:"),
+                CallbackQueryHandler(change_price_handler, pattern="^change_price:"),
+                CallbackQueryHandler(edit_description_handler, pattern="^edit_desc:"),
+                CallbackQueryHandler(view_json_handler, pattern="^view_json:"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_workflow_text_input),
+                MessageHandler(filters.AUDIO | filters.VOICE | filters.PHOTO | filters.VIDEO, handle_workflow_file_input)
             ],
             ADMIN_MAIN: [
                 CallbackQueryHandler(admin_callback_handler, pattern="^admin_"),
@@ -2142,6 +4491,35 @@ def main() -> None:
             AWAITING_MIXER_CONCEPT_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_1_handler)],
             AWAITING_MIXER_CONCEPT_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, mixer_concept_2_handler)],
             AWAITING_WEB_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, web_pilot_handler)],
+            GET_WORKFLOW_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_workflow_description)],
+            GET_WORKFLOW_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_workflow)],
+            CONFIRM_WORKFLOW: [
+                CallbackQueryHandler(confirm_and_get_name, pattern="^confirm_creation$"), 
+                CallbackQueryHandler(new_workflow_entry, pattern="^create_new$"),
+                CallbackQueryHandler(cancel_workflow_creation, pattern="^main_menu$")
+            ],
+            WORKFLOW_PRIVACY_SETTINGS: [
+                CallbackQueryHandler(workflow_privacy_handler, pattern="^privacy_")
+            ],
+            WORKFLOW_PRICING_SETTINGS: [
+                CallbackQueryHandler(workflow_privacy_handler, pattern="^price_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, workflow_price_input_handler)
+            ],
+            MARKETPLACE_BROWSE: [
+                CallbackQueryHandler(marketplace_browse, pattern="^act_marketplace$"),
+                CallbackQueryHandler(marketplace_view_workflow_handler, pattern="^market_view:"),
+                CallbackQueryHandler(install_workflow_handler, pattern="^install:"),
+                CallbackQueryHandler(buy_workflow_handler, pattern="^buy:"),
+                CallbackQueryHandler(run_owned_workflow_handler, pattern="^run_owned:")
+            ],
+            AWAITING_AI_EDIT_INSTRUCTIONS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ai_edit_workflow_input_handler),
+                CallbackQueryHandler(edit_workflow_handler, pattern="^edit_workflow:")
+            ],
+            EDIT_WORKFLOW_DESCRIPTION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, workflow_description_input_handler),
+                CallbackQueryHandler(edit_workflow_handler, pattern="^edit_workflow:")
+            ],
 
         },
         fallbacks=[CommandHandler("start", start_command), CommandHandler("cancel", cancel_handler), CommandHandler("exit", exit_command)],
