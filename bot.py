@@ -73,7 +73,7 @@ MODELS = {
     "image_edit": ["provider-6/black-forest-labs-flux-1-kontext-max", "provider-6/black-forest-labs-flux-1-kontext-dev", "provider-6/black-forest-labs-flux-1-kontext-pro", "provider-3/flux-kontext-dev"],
     "video": ["provider-6/wan-2.1"],
     "tts": ["provider-3/tts-1"],
-    "transcription": ["provider-3/whisper-1", "provider-6/distil-whisper-large-v3-en"]
+    "transcription": ["provider-6/distil-whisper-large-v3-en"]
 }
 MODELS_PER_PAGE = 5
 TTS_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
@@ -144,7 +144,7 @@ Here are the available model types and their parameters:
     - `model`: (string) Model name.
     - `file_path_from`: (string) Variable containing the path of the audio file to transcribe (e.g., `{initial_file_path}`).
     - `output_variable`: (string) The name to store the transcribed text.
-    - Available Models: "provider-2/whisper-1", "provider-6/distil-whisper-large-v3-en"
+    - Available Models: "provider-6/distil-whisper-large-v3-en"
 
 7.  `"type": "custom_api"`
     - `url`: (string) The endpoint URL.
@@ -3482,7 +3482,7 @@ Here are the available model types and their parameters:
     - `model`: (string) Model name.
     - `file_path_from`: (string) Variable containing the path of the audio file to transcribe (e.g., `{initial_file_path}`).
     - `output_variable`: (string) The name to store the transcribed text.
-    - Available Models: "provider-2/whisper-1", "provider-6/distil-whisper-large-v3-en"
+    - Available Models: "provider-6/distil-whisper-large-v3-en"
 
 7.  `"type": "custom_api"`
     - `url`: (string) The endpoint URL.
