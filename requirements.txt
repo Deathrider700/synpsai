@@ -1,3 +1,5 @@
-python-telegram-bot==20.6
-aiofiles>=23.1.0
+httpx
+requests
+pymongo
+python-telegram-bot==20.3
 psutil
