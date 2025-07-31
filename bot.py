@@ -24,7 +24,7 @@ from telegram.request import HTTPXRequest
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, DuplicateKeyError
 
-TELEGRAM_BOT_TOKEN = "7649463897:AAE_oz0r72b-tRwZVWty18xZl2ku_IbqiDY"
+TELEGRAM_BOT_TOKEN = "8385126802:AAEqYo6r3IyteSnPgLHUTpAaxdNU1SfHlB4"
 MONGODB_URL = "mongodb+srv://kuntaldebnath588:Qz4WfNVFVfpoLjOk@cluster0.c9losyl.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 INITIAL_A4F_KEYS = [
     "ddc-a4f-14783cb2294142ebb17d4bbb0e55d88f", "ddc-a4f-3b6b2b21fd794959bb008593eba6b88b",
